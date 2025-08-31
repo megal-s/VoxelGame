@@ -101,7 +101,7 @@ impl ChunkGrid {
                     chunk.contents.set_area(
                         I16Vec3::new(start_x, start_y, start_z),
                         I16Vec3::new(end_x, end_y, end_z),
-                        block,
+                        &block,
                     )?;
                 }
             }
@@ -129,8 +129,12 @@ impl ChunkGrid {
                 }
                 chunk_contents.set_area(
                     I16Vec3::new(x as i16, 0, z as i16),
-                    I16Vec3::new(x as i16, (height + position.y.abs() * CHUNK_SIZE_I32).min(CHUNK_SIZE_I32 - 1) as i16, z as i16),
-                    Block(1),
+                    I16Vec3::new(
+                        x as i16,
+                        (height + position.y.abs() * CHUNK_SIZE_I32).min(CHUNK_SIZE_I32 - 1) as i16,
+                        z as i16,
+                    ),
+                    &Block("stone".to_string()),
                 );
             }
         }
@@ -150,13 +154,13 @@ pub struct Chunk {
 }
 
 pub struct BlockGrid {
-    blocks: Box<[Block; CHUNK_BLOCK_COUNT]>,
+    blocks: Box<[Option<Block>; CHUNK_BLOCK_COUNT]>,
 }
 
 impl BlockGrid {
     pub fn new() -> Self {
         Self {
-            blocks: Box::new([Block(0); CHUNK_BLOCK_COUNT]),
+            blocks: Box::new([const { None }; CHUNK_BLOCK_COUNT]),
         }
     }
 
@@ -206,25 +210,26 @@ impl BlockGrid {
     }
 
     pub fn get(&self, position: I16Vec3) -> Option<&Block> {
-        self.blocks.get(Self::to_index(position)?)
+        self.blocks.get(Self::to_index(position)?)?.as_ref()
     }
 
     pub fn get_mut(&mut self, position: I16Vec3) -> Option<&mut Block> {
-        self.blocks.get_mut(Self::to_index(position)?)
+        self.blocks.get_mut(Self::to_index(position)?)?.as_mut()
     }
 
     pub fn set(&mut self, position: I16Vec3, block: Block) -> Option<()> {
-        self.blocks[Self::to_index(position)?] = block;
+        self.blocks[Self::to_index(position)?] = Some(block);
         Some(())
     }
 
-    pub fn set_area(&mut self, start: I16Vec3, end: I16Vec3, block: Block) -> Option<()> {
+    pub fn set_area(&mut self, start: I16Vec3, end: I16Vec3, block: &Block) -> Option<()> {
         Self::to_index(start)?;
         Self::to_index(end)?;
         for x in start.x..=end.x {
             for y in start.y..=end.y {
                 for z in start.z..=end.z {
-                    self.blocks[Self::to_index(I16Vec3::new(x, y, z)).unwrap()] = block;
+                    self.blocks[Self::to_index(I16Vec3::new(x, y, z)).unwrap()] =
+                        Some(block.clone());
                 }
             }
         }
@@ -232,8 +237,8 @@ impl BlockGrid {
     }
 }
 
-#[derive(Default, Clone, Copy)]
-pub struct Block(pub i32);
+#[derive(Default, Clone)]
+pub struct Block(pub String);
 
 #[cfg(test)]
 mod test {
