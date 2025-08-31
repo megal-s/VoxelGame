@@ -2,12 +2,14 @@ use bevy::{
     DefaultPlugins, app::App, color::palettes::css::WHITE, ecs::system::Commands, math::I16Vec3,
     platform::collections::HashMap, prelude::*, window::PrimaryWindow,
 };
+use bevy_asset_loader::prelude::*;
 use noiz::{
     Noise, SampleableFor, SeedableNoise,
     cells::OrthoGrid,
     prelude::PerCell,
     rng::{Random, UNorm},
 };
+use textures::BlockTextureAtlas;
 
 use crate::{
     chunk::{Block, BlockGrid, CHUNK_SIZE_F32, Chunk, ChunkGrid},
@@ -16,6 +18,25 @@ use crate::{
 
 mod chunk;
 mod game;
+mod textures;
+
+#[derive(Clone, Eq, PartialEq, Debug, Hash, Default, States)]
+enum GameState {
+    #[default]
+    AssetLoading,
+    CreateAtlas,
+    InGame,
+}
+
+#[derive(AssetCollection, Resource)]
+struct BlockAssets {
+    #[asset(path = "Error.png")]
+    error: Handle<Image>,
+    #[asset(path = "Stone.png")]
+    stone: Handle<Image>,
+    #[asset(path = "Dirt.png")]
+    dirt: Handle<Image>,
+}
 
 #[derive(Default, Resource)]
 struct ChunkWorld {
@@ -28,10 +49,23 @@ struct DebugPositionText;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .add_plugins(game::camera_movement::CameraMovementPlugin)
-        .add_systems(Startup, setup)
-        .add_systems(Update, update_debug_position_text)
+        .init_state::<GameState>()
+        .add_loading_state(
+            LoadingState::new(GameState::AssetLoading)
+                .continue_to_state(GameState::CreateAtlas)
+                .load_collection::<BlockAssets>(),
+        )
+        .add_systems(
+            OnEnter(GameState::CreateAtlas),
+            textures::create_block_atlas,
+        )
+        .add_systems(OnEnter(GameState::InGame), setup)
+        .add_systems(
+            Update,
+            update_debug_position_text.run_if(in_state(GameState::InGame)),
+        )
         .run();
 }
 
@@ -39,6 +73,7 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    block_atlas: Res<BlockTextureAtlas>,
     window_query: Single<&mut Window, With<PrimaryWindow>>,
 ) {
     // Setup window
@@ -55,7 +90,7 @@ fn setup(
         },
         Camera3d::default(),
         MovableCamera {
-            speed: 20.,
+            speed: 60.,
             sensitivity: 0.002,
         },
         Projection::from(PerspectiveProjection {
@@ -91,8 +126,26 @@ fn setup(
         }
     }
 
-    let chunk_meshes = game::chunk_mesh::create_chunk_meshes(&chunk_world.chunk_grid);
-    let mesh_mat = materials.add(StandardMaterial::from_color(WHITE));
+    let chunk_meshes = game::chunk_mesh::create_chunk_meshes(&chunk_world.chunk_grid, &block_atlas);
+
+    // let mut contents = BlockGrid::new();
+    // contents.set(I16Vec3::default(), Block(1)).unwrap();
+    // contents.set(I16Vec3::new(1, 0, 0), Block(2)).unwrap();
+
+    // chunk_world.chunk_grid.chunks.insert(
+    //     IVec3::default(),
+    //     Chunk {
+    //         position: IVec3::default(),
+    //         contents,
+    //     },
+    // );
+
+    let mesh_mat = materials.add(StandardMaterial {
+        base_color_texture: Some(block_atlas.texture.clone_weak()),
+        base_color: Color::WHITE,
+        ..default()
+    });
+
     for (chunk_position, mesh) in chunk_meshes {
         let mesh_handle = meshes.add(mesh);
         chunk_world

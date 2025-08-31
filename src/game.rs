@@ -12,20 +12,15 @@ pub mod camera_movement {
     use std::f32::consts::FRAC_PI_2;
 
     use bevy::{
-        app::{App, Plugin, Update},
-        ecs::{
-            component::Component,
-            system::{Res, Single},
-        },
         input::{ButtonInput, keyboard::KeyCode, mouse::AccumulatedMouseMotion},
         math::{EulerRot, Quat, Vec2},
-        render::camera::Camera,
+        prelude::*,
         time::Time,
         transform::components::Transform,
     };
 
     #[derive(Component)]
-    #[require(Camera)]
+    #[require(Camera3d)]
     pub struct MovableCamera {
         pub speed: f32,
         pub sensitivity: f32,
@@ -102,19 +97,26 @@ pub mod chunk_mesh {
         render::mesh::{Indices, Mesh, PrimitiveTopology},
     };
 
-    use crate::chunk::{Block, BlockGrid, CHUNK_BLOCK_COUNT, ChunkGrid};
+    use crate::{
+        chunk::{Block, BlockGrid, CHUNK_BLOCK_COUNT, ChunkGrid},
+        textures::BlockTextureAtlas,
+    };
 
     fn is_block_air(block: &Block) -> bool {
         block.0 == 0
     }
 
     //TODO: tidy up this code
-    pub fn create_chunk_meshes(chunk_grid: &ChunkGrid) -> HashMap<IVec3, Mesh> {
+    pub fn create_chunk_meshes(
+        chunk_grid: &ChunkGrid,
+        block_atlas: &BlockTextureAtlas,
+    ) -> HashMap<IVec3, Mesh> {
         let mut meshes = HashMap::new();
         for chunk in chunk_grid.chunks.values() {
             let mut positions = Vec::new();
             let mut normals = Vec::new();
             let mut indices = Vec::new();
+            let mut uv_0 = Vec::new();
 
             let mut indicies_offset = 0;
             for index in 0..CHUNK_BLOCK_COUNT {
@@ -125,14 +127,23 @@ pub mod chunk_mesh {
                 if chunk.contents.get(position).is_none_or(is_block_air) {
                     continue;
                 }
+
+                let atlas_rect = block_atlas
+                    .layout
+                    .textures
+                    .get(chunk.contents.get(position).unwrap().0 as usize)
+                    .unwrap_or_else(|| block_atlas.layout.textures.first().unwrap());
+
                 let block_position =
                     IVec3::new(position.x as i32, position.y as i32, position.z as i32);
+
                 // replace usage of these with the position var definied above
                 let (x, y, z) = (
                     block_position.x as f32,
                     block_position.y as f32,
                     block_position.z as f32,
                 );
+
                 // TOP FACE
                 if chunk_grid
                     .get_block(block_position + IVec3::Y)
@@ -158,6 +169,25 @@ pub mod chunk_mesh {
                         indicies_offset + 3,
                         indicies_offset + 2,
                     ]);
+                    uv_0.extend_from_slice(&[
+                        [
+                            (atlas_rect.min.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.min.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
+                        [
+                            (atlas_rect.max.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.min.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
+                        [
+                            (atlas_rect.max.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.max.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
+                        [
+                            (atlas_rect.min.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.max.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
+                    ]);
+
                     indicies_offset += 4;
                 }
                 // BOTTOM FACE
@@ -184,6 +214,24 @@ pub mod chunk_mesh {
                         indicies_offset + 1,
                         indicies_offset + 2,
                         indicies_offset + 3,
+                    ]);
+                    uv_0.extend_from_slice(&[
+                        [
+                            (atlas_rect.min.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.min.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
+                        [
+                            (atlas_rect.max.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.min.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
+                        [
+                            (atlas_rect.max.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.max.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
+                        [
+                            (atlas_rect.min.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.max.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
                     ]);
                     indicies_offset += 4;
                 }
@@ -212,6 +260,24 @@ pub mod chunk_mesh {
                         indicies_offset + 3,
                         indicies_offset + 2,
                     ]);
+                    uv_0.extend_from_slice(&[
+                        [
+                            (atlas_rect.min.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.min.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
+                        [
+                            (atlas_rect.max.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.min.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
+                        [
+                            (atlas_rect.max.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.max.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
+                        [
+                            (atlas_rect.min.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.max.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
+                    ]);
                     indicies_offset += 4;
                 }
                 // LEFT FACE
@@ -238,6 +304,24 @@ pub mod chunk_mesh {
                         indicies_offset + 1,
                         indicies_offset + 2,
                         indicies_offset + 3,
+                    ]);
+                    uv_0.extend_from_slice(&[
+                        [
+                            (atlas_rect.min.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.min.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
+                        [
+                            (atlas_rect.max.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.min.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
+                        [
+                            (atlas_rect.max.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.max.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
+                        [
+                            (atlas_rect.min.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.max.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
                     ]);
                     indicies_offset += 4;
                 }
@@ -266,6 +350,24 @@ pub mod chunk_mesh {
                         indicies_offset + 3,
                         indicies_offset + 2,
                     ]);
+                    uv_0.extend_from_slice(&[
+                        [
+                            (atlas_rect.min.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.min.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
+                        [
+                            (atlas_rect.max.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.min.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
+                        [
+                            (atlas_rect.max.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.max.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
+                        [
+                            (atlas_rect.min.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.max.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
+                    ]);
                     indicies_offset += 4;
                 }
                 // FRONT FACE
@@ -293,19 +395,41 @@ pub mod chunk_mesh {
                         indicies_offset + 2,
                         indicies_offset + 3,
                     ]);
+                    uv_0.extend_from_slice(&[
+                        [
+                            (atlas_rect.min.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.min.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
+                        [
+                            (atlas_rect.max.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.min.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
+                        [
+                            (atlas_rect.max.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.max.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
+                        [
+                            (atlas_rect.min.x as f32) / (block_atlas.layout.size.x as f32),
+                            (atlas_rect.max.y as f32) / (block_atlas.layout.size.y as f32),
+                        ],
+                    ]);
                     indicies_offset += 4;
                 }
             }
+
             if indices.is_empty() {
                 continue;
             }
+
             let mesh = Mesh::new(
                 PrimitiveTopology::TriangleList,
                 RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
             )
             .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
             .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uv_0)
             .with_inserted_indices(Indices::U32(indices));
+
             meshes.insert(chunk.position, mesh);
         }
         meshes
