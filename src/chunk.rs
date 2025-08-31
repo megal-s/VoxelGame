@@ -1,14 +1,8 @@
 use bevy::{
-    math::{I16Vec3, IVec2, IVec3, Vec2, Vec3},
+    math::{I16Vec3, IVec3, Vec2, Vec3},
     platform::collections::HashMap,
-    utils::default,
 };
-use noiz::{
-    Noise, Sampleable, SampleableFor, ScalableNoise, SeedableNoise,
-    cells::OrthoGrid,
-    curves::Smoothstep,
-    prelude::{MixCellGradients, QuickGradients, SNormToUNorm, common_noise::Perlin},
-};
+use noiz::SampleableFor;
 
 // Could probably be nicer
 pub const CHUNK_SIZE_I16: i16 = 32; // due to i16 having a max value of 32768, this value must not exceed 32
@@ -129,10 +123,13 @@ impl ChunkGrid {
             for z in 0..CHUNK_SIZE_I32 {
                 let raw_z = position.z * CHUNK_SIZE_I32 + z;
                 let a: f32 = noise.sample(Vec2::new(raw_x as f32, raw_z as f32));
-                let height = (a * 10.) as i32;
+                let height = (a * 10.) as i32 + 2;
+                if height < position.y * CHUNK_SIZE_I32 {
+                    continue;
+                }
                 chunk_contents.set_area(
                     I16Vec3::new(x as i16, 0, z as i16),
-                    I16Vec3::new(x as i16, height as i16, z as i16),
+                    I16Vec3::new(x as i16, (height + position.y.abs() * CHUNK_SIZE_I32).min(CHUNK_SIZE_I32 - 1) as i16, z as i16),
                     Block(1),
                 );
             }

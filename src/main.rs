@@ -1,10 +1,10 @@
 use bevy::{
-    DefaultPlugins, app::App, color::palettes::css::WHITE, ecs::system::Commands, math::I16Vec3,
-    platform::collections::HashMap, prelude::*, window::PrimaryWindow,
+    DefaultPlugins, app::App, ecs::system::Commands, platform::collections::HashMap, prelude::*,
+    window::PrimaryWindow,
 };
 use bevy_asset_loader::prelude::*;
 use noiz::{
-    Noise, SampleableFor, SeedableNoise,
+    Noise, SeedableNoise,
     cells::OrthoGrid,
     prelude::PerCell,
     rng::{Random, UNorm},
@@ -12,7 +12,7 @@ use noiz::{
 use textures::BlockTextureAtlas;
 
 use crate::{
-    chunk::{Block, BlockGrid, CHUNK_SIZE_F32, Chunk, ChunkGrid},
+    chunk::{BlockGrid, CHUNK_SIZE_F32, ChunkGrid},
     game::camera_movement::MovableCamera,
 };
 
