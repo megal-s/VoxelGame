@@ -11,7 +11,18 @@
 pub mod camera_movement {
     use std::f32::consts::FRAC_PI_2;
 
-    use bevy::{app::{App, Plugin, Update}, ecs::{component::Component, system::{Res, Single}}, input::{keyboard::KeyCode, mouse::AccumulatedMouseMotion, ButtonInput}, math::{EulerRot, Quat, Vec2}, render::camera::Camera, time::Time, transform::components::Transform};
+    use bevy::{
+        app::{App, Plugin, Update},
+        ecs::{
+            component::Component,
+            system::{Res, Single},
+        },
+        input::{ButtonInput, keyboard::KeyCode, mouse::AccumulatedMouseMotion},
+        math::{EulerRot, Quat, Vec2},
+        render::camera::Camera,
+        time::Time,
+        transform::components::Transform,
+    };
 
     #[derive(Component)]
     #[require(Camera)]
@@ -29,9 +40,15 @@ pub mod camera_movement {
     }
 
     fn axis(a: bool, b: bool) -> f32 {
-        if a && b { return 0. }
-        if a { return  1. }
-        if b { return -1. }
+        if a && b {
+            return 0.;
+        }
+        if a {
+            return 1.;
+        }
+        if b {
+            return -1.;
+        }
         0.
     }
 
@@ -42,31 +59,50 @@ pub mod camera_movement {
         camera_query: Single<(&mut Transform, &MovableCamera)>,
     ) {
         let (mut transform, movable_camera) = camera_query.into_inner();
-        
+
         let forward = transform.forward().normalize();
         let left = transform.left().normalize();
         let up = transform.up().normalize();
-        transform.translation += (
-            forward * axis(keyboard_input.pressed(KeyCode::KeyW), keyboard_input.pressed(KeyCode::KeyS))
-            + left * axis(keyboard_input.pressed(KeyCode::KeyA), keyboard_input.pressed(KeyCode::KeyD))
-            + up * axis(keyboard_input.pressed(KeyCode::Space), keyboard_input.pressed(KeyCode::ShiftLeft))
-        ) * movable_camera.speed * time.delta_secs();
+        transform.translation += (forward
+            * axis(
+                keyboard_input.pressed(KeyCode::KeyW),
+                keyboard_input.pressed(KeyCode::KeyS),
+            )
+            + left
+                * axis(
+                    keyboard_input.pressed(KeyCode::KeyA),
+                    keyboard_input.pressed(KeyCode::KeyD),
+                )
+            + up * axis(
+                keyboard_input.pressed(KeyCode::Space),
+                keyboard_input.pressed(KeyCode::ShiftLeft),
+            ))
+            * movable_camera.speed
+            * time.delta_secs();
 
-        if mouse_motion.delta == Vec2::ZERO { return }
+        if mouse_motion.delta == Vec2::ZERO {
+            return;
+        }
         let (mut yaw, mut pitch, roll) = transform.rotation.to_euler(EulerRot::YXZ);
         yaw += -mouse_motion.delta.x * movable_camera.sensitivity;
 
         const PITCH_MAX: f32 = FRAC_PI_2 - 0.01;
-        pitch = (pitch - mouse_motion.delta.y * movable_camera.sensitivity).clamp(-PITCH_MAX, PITCH_MAX);
+        pitch = (pitch - mouse_motion.delta.y * movable_camera.sensitivity)
+            .clamp(-PITCH_MAX, PITCH_MAX);
 
         transform.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
     }
 }
 
 pub mod chunk_mesh {
-    use bevy::{asset::RenderAssetUsages, math::IVec3, platform::collections::HashMap, render::mesh::{Indices, Mesh, PrimitiveTopology}};
+    use bevy::{
+        asset::RenderAssetUsages,
+        math::IVec3,
+        platform::collections::HashMap,
+        render::mesh::{Indices, Mesh, PrimitiveTopology},
+    };
 
-    use crate::chunk::{Block, BlockGrid, ChunkGrid, CHUNK_BLOCK_COUNT};
+    use crate::chunk::{Block, BlockGrid, CHUNK_BLOCK_COUNT, ChunkGrid};
 
     fn is_block_air(block: &Block) -> bool {
         block.0 == 0
@@ -79,151 +115,203 @@ pub mod chunk_mesh {
             let mut positions = Vec::new();
             let mut normals = Vec::new();
             let mut indices = Vec::new();
-            
+
             let mut indicies_offset = 0;
             for index in 0..CHUNK_BLOCK_COUNT {
-                let Some(position) = BlockGrid::to_block_coordinates_from_index(index) else { continue };
+                let Some(position) = BlockGrid::to_block_coordinates_from_index(index) else {
+                    continue;
+                };
 
-                if chunk.contents.get(position).is_none_or(is_block_air) { continue }
-                let block_position = IVec3::new(position.x as i32, position.y as i32, position.z as i32);
+                if chunk.contents.get(position).is_none_or(is_block_air) {
+                    continue;
+                }
+                let block_position =
+                    IVec3::new(position.x as i32, position.y as i32, position.z as i32);
                 // replace usage of these with the position var definied above
-                let (x, y, z) = (block_position.x as f32, block_position.y as f32, block_position.z as f32);
+                let (x, y, z) = (
+                    block_position.x as f32,
+                    block_position.y as f32,
+                    block_position.z as f32,
+                );
                 // TOP FACE
-                if chunk_grid.get_block(block_position + IVec3::Y).is_none_or(is_block_air) {
+                if chunk_grid
+                    .get_block(block_position + IVec3::Y)
+                    .is_none_or(is_block_air)
+                {
                     positions.extend_from_slice(&[
-                        [x+ -0.5, y+ 0.5, z+-0.5],
-                        [x+  0.5, y+ 0.5, z+-0.5],
-                        [x+  0.5, y+ 0.5, z+ 0.5],
-                        [x+ -0.5, y+ 0.5, z+ 0.5],
+                        [x + -0.5, y + 0.5, z + -0.5],
+                        [x + 0.5, y + 0.5, z + -0.5],
+                        [x + 0.5, y + 0.5, z + 0.5],
+                        [x + -0.5, y + 0.5, z + 0.5],
                     ]);
                     normals.extend_from_slice(&[
-                        [ 0.0,  1.0,  0.0],
-                        [ 0.0,  1.0,  0.0],
-                        [ 0.0,  1.0,  0.0],
-                        [ 0.0,  1.0,  0.0],
+                        [0.0, 1.0, 0.0],
+                        [0.0, 1.0, 0.0],
+                        [0.0, 1.0, 0.0],
+                        [0.0, 1.0, 0.0],
                     ]);
                     indices.extend_from_slice(&[
-                        indicies_offset    , indicies_offset + 3, indicies_offset + 1, 
-                        indicies_offset + 1, indicies_offset + 3, indicies_offset + 2,
+                        indicies_offset,
+                        indicies_offset + 3,
+                        indicies_offset + 1,
+                        indicies_offset + 1,
+                        indicies_offset + 3,
+                        indicies_offset + 2,
                     ]);
                     indicies_offset += 4;
                 }
                 // BOTTOM FACE
-                if chunk_grid.get_block(block_position - IVec3::Y).is_none_or(is_block_air) {
+                if chunk_grid
+                    .get_block(block_position - IVec3::Y)
+                    .is_none_or(is_block_air)
+                {
                     positions.extend_from_slice(&[
-                        [x+ -0.5, y+-0.5, z+-0.5],
-                        [x+  0.5, y+-0.5, z+-0.5],
-                        [x+  0.5, y+-0.5, z+ 0.5],
-                        [x+ -0.5, y+-0.5, z+ 0.5],
+                        [x + -0.5, y + -0.5, z + -0.5],
+                        [x + 0.5, y + -0.5, z + -0.5],
+                        [x + 0.5, y + -0.5, z + 0.5],
+                        [x + -0.5, y + -0.5, z + 0.5],
                     ]);
                     normals.extend_from_slice(&[
-                        [ 0.0, -1.0,  0.0],
-                        [ 0.0, -1.0,  0.0],
-                        [ 0.0, -1.0,  0.0],
-                        [ 0.0, -1.0,  0.0],
+                        [0.0, -1.0, 0.0],
+                        [0.0, -1.0, 0.0],
+                        [0.0, -1.0, 0.0],
+                        [0.0, -1.0, 0.0],
                     ]);
                     indices.extend_from_slice(&[
-                        indicies_offset    , indicies_offset + 1, indicies_offset + 3, 
-                        indicies_offset + 1, indicies_offset + 2, indicies_offset + 3,
+                        indicies_offset,
+                        indicies_offset + 1,
+                        indicies_offset + 3,
+                        indicies_offset + 1,
+                        indicies_offset + 2,
+                        indicies_offset + 3,
                     ]);
                     indicies_offset += 4;
                 }
                 // RIGHT FACE
-                if chunk_grid.get_block(block_position + IVec3::X).is_none_or(is_block_air) {
+                if chunk_grid
+                    .get_block(block_position + IVec3::X)
+                    .is_none_or(is_block_air)
+                {
                     positions.extend_from_slice(&[
-                        [x+  0.5, y+-0.5, z+-0.5],
-                        [x+  0.5, y+-0.5, z+ 0.5],
-                        [x+  0.5, y+ 0.5, z+ 0.5],
-                        [x+  0.5, y+ 0.5, z+-0.5],
+                        [x + 0.5, y + -0.5, z + -0.5],
+                        [x + 0.5, y + -0.5, z + 0.5],
+                        [x + 0.5, y + 0.5, z + 0.5],
+                        [x + 0.5, y + 0.5, z + -0.5],
                     ]);
                     normals.extend_from_slice(&[
-                        [ 1.0,  0.0,  0.0],
-                        [ 1.0,  0.0,  0.0],
-                        [ 1.0,  0.0,  0.0],
-                        [ 1.0,  0.0,  0.0],
+                        [1.0, 0.0, 0.0],
+                        [1.0, 0.0, 0.0],
+                        [1.0, 0.0, 0.0],
+                        [1.0, 0.0, 0.0],
                     ]);
                     indices.extend_from_slice(&[
-                        indicies_offset    , indicies_offset + 3, indicies_offset + 1, 
-                        indicies_offset + 1, indicies_offset + 3, indicies_offset + 2,
+                        indicies_offset,
+                        indicies_offset + 3,
+                        indicies_offset + 1,
+                        indicies_offset + 1,
+                        indicies_offset + 3,
+                        indicies_offset + 2,
                     ]);
                     indicies_offset += 4;
                 }
                 // LEFT FACE
-                if chunk_grid.get_block(block_position - IVec3::X).is_none_or(is_block_air) {
+                if chunk_grid
+                    .get_block(block_position - IVec3::X)
+                    .is_none_or(is_block_air)
+                {
                     positions.extend_from_slice(&[
-                        [x+ -0.5, y+-0.5, z+-0.5],
-                        [x+ -0.5, y+-0.5, z+ 0.5],
-                        [x+ -0.5, y+ 0.5, z+ 0.5],
-                        [x+ -0.5, y+ 0.5, z+-0.5],
+                        [x + -0.5, y + -0.5, z + -0.5],
+                        [x + -0.5, y + -0.5, z + 0.5],
+                        [x + -0.5, y + 0.5, z + 0.5],
+                        [x + -0.5, y + 0.5, z + -0.5],
                     ]);
                     normals.extend_from_slice(&[
-                        [-1.0,  0.0,  0.0],
-                        [-1.0,  0.0,  0.0],
-                        [-1.0,  0.0,  0.0],
-                        [-1.0,  0.0,  0.0],
+                        [-1.0, 0.0, 0.0],
+                        [-1.0, 0.0, 0.0],
+                        [-1.0, 0.0, 0.0],
+                        [-1.0, 0.0, 0.0],
                     ]);
                     indices.extend_from_slice(&[
-                        indicies_offset    , indicies_offset + 1, indicies_offset + 3, 
-                        indicies_offset + 1, indicies_offset + 2, indicies_offset + 3,
+                        indicies_offset,
+                        indicies_offset + 1,
+                        indicies_offset + 3,
+                        indicies_offset + 1,
+                        indicies_offset + 2,
+                        indicies_offset + 3,
                     ]);
                     indicies_offset += 4;
                 }
                 // BACK FACE
-                if chunk_grid.get_block(block_position + IVec3::Z).is_none_or(is_block_air) {
+                if chunk_grid
+                    .get_block(block_position + IVec3::Z)
+                    .is_none_or(is_block_air)
+                {
                     positions.extend_from_slice(&[
-                        [x+ -0.5, y+-0.5, z+ 0.5],
-                        [x+ -0.5, y+ 0.5, z+ 0.5],
-                        [x+  0.5, y+ 0.5, z+ 0.5],
-                        [x+  0.5, y+-0.5, z+ 0.5],
+                        [x + -0.5, y + -0.5, z + 0.5],
+                        [x + -0.5, y + 0.5, z + 0.5],
+                        [x + 0.5, y + 0.5, z + 0.5],
+                        [x + 0.5, y + -0.5, z + 0.5],
                     ]);
                     normals.extend_from_slice(&[
-                        [ 0.0,  0.0,  1.0],
-                        [ 0.0,  0.0,  1.0],
-                        [ 0.0,  0.0,  1.0],
-                        [ 0.0,  0.0,  1.0],
+                        [0.0, 0.0, 1.0],
+                        [0.0, 0.0, 1.0],
+                        [0.0, 0.0, 1.0],
+                        [0.0, 0.0, 1.0],
                     ]);
                     indices.extend_from_slice(&[
-                        indicies_offset    , indicies_offset + 3, indicies_offset + 1, 
-                        indicies_offset + 1, indicies_offset + 3, indicies_offset + 2,
+                        indicies_offset,
+                        indicies_offset + 3,
+                        indicies_offset + 1,
+                        indicies_offset + 1,
+                        indicies_offset + 3,
+                        indicies_offset + 2,
                     ]);
                     indicies_offset += 4;
                 }
                 // FRONT FACE
-                if chunk_grid.get_block(block_position - IVec3::Z).is_none_or(is_block_air) {
+                if chunk_grid
+                    .get_block(block_position - IVec3::Z)
+                    .is_none_or(is_block_air)
+                {
                     positions.extend_from_slice(&[
-                        [x+ -0.5, y+-0.5, z+-0.5],
-                        [x+ -0.5, y+ 0.5, z+-0.5],
-                        [x+  0.5, y+ 0.5, z+-0.5],
-                        [x+  0.5, y+-0.5, z+-0.5],
+                        [x + -0.5, y + -0.5, z + -0.5],
+                        [x + -0.5, y + 0.5, z + -0.5],
+                        [x + 0.5, y + 0.5, z + -0.5],
+                        [x + 0.5, y + -0.5, z + -0.5],
                     ]);
                     normals.extend_from_slice(&[
-                        [ 0.0,  0.0, -1.0],
-                        [ 0.0,  0.0, -1.0],
-                        [ 0.0,  0.0, -1.0],
-                        [ 0.0,  0.0, -1.0],
+                        [0.0, 0.0, -1.0],
+                        [0.0, 0.0, -1.0],
+                        [0.0, 0.0, -1.0],
+                        [0.0, 0.0, -1.0],
                     ]);
                     indices.extend_from_slice(&[
-                        indicies_offset    , indicies_offset + 1, indicies_offset + 3, 
-                        indicies_offset + 1, indicies_offset + 2, indicies_offset + 3,
+                        indicies_offset,
+                        indicies_offset + 1,
+                        indicies_offset + 3,
+                        indicies_offset + 1,
+                        indicies_offset + 2,
+                        indicies_offset + 3,
                     ]);
                     indicies_offset += 4;
                 }
             }
-            if indices.is_empty() { continue }
-            let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD)
-                .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-                .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
-                .with_inserted_indices(Indices::U32(indices));
+            if indices.is_empty() {
+                continue;
+            }
+            let mesh = Mesh::new(
+                PrimitiveTopology::TriangleList,
+                RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+            )
+            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+            .with_inserted_indices(Indices::U32(indices));
             meshes.insert(chunk.position, mesh);
         }
         meshes
     }
 }
 
-mod chunk_file {
+mod chunk_file {}
 
-}
-
-mod world_generation {
-
-}
+mod world_generation {}
