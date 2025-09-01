@@ -6,9 +6,9 @@ use bevy_asset_loader::prelude::*;
 use blocks::BlockManager;
 use chunk::{Block, Chunk};
 use noiz::{
-    Noise, SeedableNoise,
+    Noise, Sampleable, SampleableFor, ScalableNoise, SeedableNoise,
     cells::OrthoGrid,
-    prelude::PerCell,
+    prelude::{PerCell, common_noise::Perlin},
     rng::{Random, UNorm},
 };
 
@@ -102,50 +102,42 @@ fn setup(
     // Temporary code, generation will be added later
     let mut chunk_world = ChunkWorld::default();
 
-    // let mut noise = Noise::<PerCell<OrthoGrid, Random<UNorm, f32>>>::default();
-    // noise.set_seed(10);
-    // const MIN_CHUNK: i32 = -2;
-    // const MAX_CHUNK: i32 = 2;
-    // for x in MIN_CHUNK..=MAX_CHUNK {
-    //     for y in MIN_CHUNK..=MAX_CHUNK {
-    //         for z in MIN_CHUNK..=MAX_CHUNK {
-    //             /*if x.abs() % 2 == 1 || y.abs() % 2 == 1 || z.abs() % 2 == 1 {
-    //                 continue;
-    //             }*/
-    //             chunk_world
-    //                 .chunk_grid
-    //                 .generate_chunk(IVec3::new(x, y, z), &noise);
-    //             /*
-    //             let position = IVec3::new(x, y, z);
-    //             let mut contents = BlockGrid::new();
-    //             contents.set_area(I16Vec3::ZERO, I16Vec3::splat(31), Block(1));
-    //             chunk_world.chunk_grid.chunks.insert(position, Chunk { position, contents });
-    //             */
-    //         }
-    //     }
-    // }
+    let mut noise = Noise::<Perlin>::default();
+    noise.set_seed(10);
+    noise.set_period(CHUNK_SIZE_F32);
+    const MIN_CHUNK: i32 = -2;
+    const MAX_CHUNK: i32 = 2;
+    for x in MIN_CHUNK..=MAX_CHUNK {
+        for y in MIN_CHUNK..=MAX_CHUNK {
+            for z in MIN_CHUNK..=MAX_CHUNK {
+                chunk_world
+                    .chunk_grid
+                    .generate_chunk(IVec3::new(x, y, z), &noise);
+            }
+        }
+    }
 
-    let mut contents = BlockGrid::new();
-    contents
-        .set(I16Vec3::new(0, 0, 0), Block("stone".to_string()))
-        .unwrap();
-    contents
-        .set(I16Vec3::new(1, 0, 0), Block("dirt".to_string()))
-        .unwrap();
-    contents
-        .set(I16Vec3::new(2, 0, 0), Block("doesn't exist".to_string()))
-        .unwrap();
+    // let mut contents = BlockGrid::new();
+    // contents
+    //     .set(I16Vec3::new(0, 0, 0), Block("stone".to_string()))
+    //     .unwrap();
+    // contents
+    //     .set(I16Vec3::new(1, 0, 0), Block("dirt".to_string()))
+    //     .unwrap();
+    // contents
+    //     .set(I16Vec3::new(2, 0, 0), Block("doesn't exist".to_string()))
+    //     .unwrap();
 
-    chunk_world.chunk_grid.chunks.insert(
-        IVec3::default(),
-        Chunk {
-            position: IVec3::default(),
-            contents,
-        },
-    );
+    // chunk_world.chunk_grid.chunks.insert(
+    //     IVec3::default(),
+    //     Chunk {
+    //         position: IVec3::default(),
+    //         contents,
+    //     },
+    // );
 
     let chunk_meshes =
-        game::chunk_mesh::create_chunk_meshes(&chunk_world.chunk_grid, &block_manager);
+        game::chunk_mesh::rebuild_chunk_meshes(&chunk_world.chunk_grid, &block_manager);
 
     let mesh_mat = materials.add(StandardMaterial {
         base_color_texture: Some(block_manager.atlas_texture().expect("Atlas is not built")),
