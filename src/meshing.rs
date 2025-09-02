@@ -44,7 +44,7 @@ pub fn rebuild_chunk_mesh(
             continue;
         };
 
-        let atlas_rect = block_manager.atlas_location_or_error(&block);
+        let atlas_rect = block_manager.atlas_location_or_error(block);
 
         let block_position = IVec3::new(position.x as i32, position.y as i32, position.z as i32)
             + chunk.position * CHUNK_SIZE_I32;

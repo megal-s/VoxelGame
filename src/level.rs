@@ -26,6 +26,7 @@ use bevy::{
 use noiz::{Noise, prelude::common_noise::Perlin, rng::NoiseRng};
 
 use crate::{
+    GameSettings,
     blocks::BlockManagerResource,
     chunk::{CHUNK_SIZE_F32, ChunkGrid},
     meshing::rebuild_chunk_mesh,
@@ -40,6 +41,7 @@ impl Plugin for ChunkLoaderPlugin {
             .add_systems(
                 Update,
                 (
+                    discard_far_chunks,
                     generate_nearby_chunks,
                     generate_chunk_meshes,
                     update_chunk_entities,
@@ -97,19 +99,23 @@ fn setup_level(
 
 fn generate_nearby_chunks(
     level: Res<Level>,
+    settings: Res<GameSettings>,
     camera_query: Single<&Transform, With<Camera>>, //in future change this to be the player
 ) {
-    const GENERATION_DISTANCE: i32 = 2;
     let camera_position = ChunkGrid::to_chunk_coordinates(camera_query.into_inner().translation);
+    //Todo: clean this up
     let noise = level.noise;
     let loaded_chunks = level.loaded_chunks.clone();
     let chunk_queue = level.chunk_queue.clone();
     let chunk_grid = level.chunk_grid.clone();
-    //AsyncComputeTaskPool::get().spawn(async move {
-    for x in camera_position.x - GENERATION_DISTANCE..=camera_position.x + GENERATION_DISTANCE {
-        for y in camera_position.y - GENERATION_DISTANCE..=camera_position.y + GENERATION_DISTANCE {
-            for z in
-                camera_position.z - GENERATION_DISTANCE..=camera_position.z + GENERATION_DISTANCE
+    for x in camera_position.x - settings.horizontal_render_distance
+        ..=camera_position.x + settings.horizontal_render_distance
+    {
+        for y in camera_position.y - settings.vertical_render_distance
+            ..=camera_position.y + settings.vertical_render_distance
+        {
+            for z in camera_position.z - settings.horizontal_render_distance
+                ..=camera_position.z + settings.horizontal_render_distance
             {
                 let position = IVec3::new(x, y, z);
                 if loaded_chunks
@@ -143,7 +149,56 @@ fn generate_nearby_chunks(
             }
         }
     }
-    //}).detach();
+}
+
+fn discard_far_chunks(
+    mut commands: Commands,
+    mut level: ResMut<Level>,
+    settings: Res<GameSettings>,
+    camera_query: Single<&Transform, With<Camera>>,
+) {
+    let camera_position = ChunkGrid::to_chunk_coordinates(camera_query.into_inner().translation);
+
+    let discarded_chunks = {
+        let Ok(chunk_grid) = level.chunk_grid.try_lock() else {
+            return;
+        };
+        chunk_grid
+            .chunks
+            .keys()
+            .clone()
+            .filter_map(|position| {
+                let diff = (position - camera_position).abs();
+                if diff.x <= settings.horizontal_render_distance
+                    && diff.y <= settings.vertical_render_distance
+                    && diff.z <= settings.horizontal_render_distance
+                {
+                    return None;
+                }
+                Some(*position)
+            })
+            .collect::<Vec<IVec3>>()
+    };
+
+    // Todo: make this way better
+    for position in discarded_chunks {
+        level
+            .chunk_grid
+            .lock()
+            .expect("Chunk grid mutex poisoned")
+            .chunks
+            .remove(&position);
+        level
+            .loaded_chunks
+            .lock()
+            .expect("Loaded chunks hashset poisoned")
+            .remove(&position);
+        let Some(entity) = level.chunk_entities.remove(&position) else {
+            continue;
+        };
+
+        commands.entity(entity).despawn();
+    }
 }
 
 fn generate_chunk_meshes(level: Res<Level>, block_manager: ResMut<BlockManagerResource>) {
@@ -162,10 +217,13 @@ fn generate_chunk_meshes(level: Res<Level>, block_manager: ResMut<BlockManagerRe
         AsyncComputeTaskPool::get()
             .spawn(async move {
                 let chunk_grid = chunk_grid.lock().expect("Chunk grid mutex poisoned");
+                let Some(chunk) = chunk_grid.chunks.get(&chunk_position) else {
+                    return;
+                };
                 let Some(mesh) = rebuild_chunk_mesh(
                     &chunk_grid,
                     &block_manager.lock().expect("Block manager mutex poisoned"),
-                    &chunk_grid.chunks[&chunk_position],
+                    chunk,
                 ) else {
                     return;
                 };

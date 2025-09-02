@@ -32,6 +32,21 @@ struct BlockAssets {
     dirt: Handle<Image>,
 }
 
+#[derive(Resource)]
+struct GameSettings {
+    horizontal_render_distance: i32,
+    vertical_render_distance: i32,
+}
+
+impl Default for GameSettings {
+    fn default() -> Self {
+        Self {
+            horizontal_render_distance: 3,
+            vertical_render_distance: 3,
+        }
+    }
+}
+
 #[derive(Component)]
 struct DebugPositionText;
 
@@ -41,6 +56,7 @@ fn main() {
         .add_plugins(game::camera_movement::CameraMovementPlugin)
         .add_plugins(level::ChunkLoaderPlugin)
         .init_resource::<BlockManagerResource>()
+        .insert_resource(GameSettings::default())
         .init_state::<GameState>()
         .add_loading_state(
             LoadingState::new(GameState::AssetLoading)
