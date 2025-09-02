@@ -27,7 +27,7 @@ use noiz::{Noise, prelude::common_noise::Perlin, rng::NoiseRng};
 
 use crate::{
     blocks::BlockManagerResource,
-    chunk::{CHUNK_SIZE_F32, Chunk, ChunkGrid},
+    chunk::{CHUNK_SIZE_F32, ChunkGrid},
     game::chunk_mesh::rebuild_chunk_mesh,
 };
 
@@ -57,7 +57,7 @@ pub struct Level {
     loaded_chunks: Arc<Mutex<HashSet<IVec3>>>,
     chunk_grid: Arc<Mutex<ChunkGrid>>,
     chunk_entities: HashMap<IVec3, Entity>,
-    chunk_queue: Arc<Mutex<Vec<Chunk>>>,
+    chunk_queue: Arc<Mutex<Vec<IVec3>>>,
     chunk_mesh_queue: Arc<Mutex<Vec<(IVec3, Mesh)>>>,
 }
 
@@ -104,6 +104,7 @@ fn generate_nearby_chunks(
     let noise = level.noise;
     let loaded_chunks = level.loaded_chunks.clone();
     let chunk_queue = level.chunk_queue.clone();
+    let chunk_grid = level.chunk_grid.clone();
     //AsyncComputeTaskPool::get().spawn(async move {
     for x in camera_position.x - GENERATION_DISTANCE..=camera_position.x + GENERATION_DISTANCE {
         for y in camera_position.y - GENERATION_DISTANCE..=camera_position.y + GENERATION_DISTANCE {
@@ -116,14 +117,16 @@ fn generate_nearby_chunks(
                 }
                 //let noise = noise;
                 let chunk_queue = chunk_queue.clone();
+                let chunk_grid = chunk_grid.clone();
                 loaded_chunks.lock().expect("Loaded chunk hashset mutex poisoned").insert(position);
                 AsyncComputeTaskPool::get()
                     .spawn(async move {
                         let chunk = ChunkGrid::generate_or_load_chunk(position, &noise);
+                        chunk_grid.lock().expect("Chunk grid mutex was poisoned").chunks.insert(position, chunk);
                         chunk_queue
                             .lock()
                             .expect("Chunk queue mutex poisoned")
-                            .push(chunk);
+                            .push(position);
                     })
                     .detach();
             }
@@ -138,7 +141,7 @@ fn generate_chunk_meshes(level: Res<Level>, block_manager: ResMut<BlockManagerRe
     };
 
     while !chunk_queue.is_empty() {
-        let Some(chunk) = chunk_queue.pop() else {
+        let Some(chunk_position) = chunk_queue.pop() else {
             continue;
         };
 
@@ -147,17 +150,18 @@ fn generate_chunk_meshes(level: Res<Level>, block_manager: ResMut<BlockManagerRe
         let chunk_mesh_queue = level.chunk_mesh_queue.clone();
         AsyncComputeTaskPool::get()
             .spawn(async move {
+                let chunk_grid = chunk_grid.lock().expect("Chunk grid mutex poisoned");
                 let Some(mesh) = rebuild_chunk_mesh(
-                    &chunk_grid.lock().expect("Chunk grid mutex poisoned"),
+                    &chunk_grid,
                     &block_manager.lock().expect("Block manager mutex poisoned"),
-                    &chunk,
+                    &chunk_grid.chunks[&chunk_position],
                 ) else {
                     return;
                 };
                 chunk_mesh_queue
                     .lock()
                     .expect("Chunk mesh queue mutex poisoned")
-                    .push((chunk.position, mesh));
+                    .push((chunk_position, mesh));
             })
             .detach();
     }
