@@ -58,7 +58,7 @@ pub struct Level {
     block_material: Handle<StandardMaterial>,
     loaded_chunks: Arc<Mutex<HashSet<IVec3>>>,
     chunk_grid: Arc<Mutex<ChunkGrid>>,
-    chunk_entities: HashMap<IVec3, Entity>,
+    pub chunk_entities: HashMap<IVec3, Entity>, // public so that the debug text can read it
     chunk_queue: Arc<Mutex<Vec<IVec3>>>,
     chunk_mesh_queue: Arc<Mutex<Vec<(IVec3, Mesh)>>>,
 }

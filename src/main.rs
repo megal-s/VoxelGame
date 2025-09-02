@@ -6,6 +6,7 @@ use crate::{
     blocks::BlockManagerResource,
     chunk::{BlockGrid, ChunkGrid},
     game::camera_movement::MovableCamera,
+    level::Level,
 };
 
 mod blocks;
@@ -48,7 +49,7 @@ impl Default for GameSettings {
 }
 
 #[derive(Component)]
-struct DebugPositionText;
+struct DebugText;
 
 fn main() {
     App::new()
@@ -67,7 +68,7 @@ fn main() {
         .add_systems(OnEnter(GameState::InGame), setup)
         .add_systems(
             Update,
-            update_debug_position_text.run_if(in_state(GameState::InGame)),
+            update_debug_text.run_if(in_state(GameState::InGame)),
         )
         .run();
 }
@@ -98,8 +99,8 @@ fn setup(mut commands: Commands, window_query: Single<&mut Window, With<PrimaryW
 
     // Debug info
     commands.spawn((
-        DebugPositionText,
-        Text::new("Raw   x/y/z: ?\nBlock x/y/z: ? (?)\nChunk x/y/z: ?"),
+        DebugText,
+        Text::default(),
         Node {
             position_type: PositionType::Absolute,
             top: Val::Px(5.0),
@@ -109,9 +110,10 @@ fn setup(mut commands: Commands, window_query: Single<&mut Window, With<PrimaryW
     ));
 }
 
-fn update_debug_position_text(
+fn update_debug_text(
+    level: Res<Level>,
     camera_query: Single<&Transform, With<Camera>>,
-    text_query: Single<&mut Text, With<DebugPositionText>>,
+    text_query: Single<&mut Text, With<DebugText>>,
 ) {
     let camera_position = camera_query.into_inner().translation;
     let int_camera_position = IVec3::new(
@@ -120,11 +122,12 @@ fn update_debug_position_text(
         camera_position.z as i32,
     );
     text_query.into_inner().0 = format!(
-        "Raw   x/y/z: {}\nBlock x/y/z: {} ({})\nChunk x/y/z: {}",
+        "Raw   x/y/z: {}\nBlock x/y/z: {} ({})\nChunk x/y/z: {}\n\nChunk Count: {}",
         camera_position,
         int_camera_position,
         BlockGrid::to_block_coordinates(int_camera_position),
         ChunkGrid::to_chunk_coordinates(camera_position),
+        level.chunk_entities.len(),
     );
 }
 
