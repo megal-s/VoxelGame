@@ -12,6 +12,7 @@ mod blocks;
 mod chunk;
 mod game;
 mod level;
+mod meshing;
 
 #[derive(Clone, Eq, PartialEq, Debug, Hash, Default, States)]
 enum GameState {
@@ -55,10 +56,7 @@ fn main() {
         .run();
 }
 
-fn setup(
-    mut commands: Commands,
-    window_query: Single<&mut Window, With<PrimaryWindow>>,
-) {
+fn setup(mut commands: Commands, window_query: Single<&mut Window, With<PrimaryWindow>>) {
     // Setup window
     let mut window = window_query.into_inner();
     window.cursor_options.grab_mode = bevy::window::CursorGrabMode::Confined;

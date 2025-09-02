@@ -28,7 +28,7 @@ use noiz::{Noise, prelude::common_noise::Perlin, rng::NoiseRng};
 use crate::{
     blocks::BlockManagerResource,
     chunk::{CHUNK_SIZE_F32, ChunkGrid},
-    game::chunk_mesh::rebuild_chunk_mesh,
+    meshing::rebuild_chunk_mesh,
 };
 
 pub struct ChunkLoaderPlugin;
@@ -112,17 +112,28 @@ fn generate_nearby_chunks(
                 camera_position.z - GENERATION_DISTANCE..=camera_position.z + GENERATION_DISTANCE
             {
                 let position = IVec3::new(x, y, z);
-                if loaded_chunks.lock().expect("Loaded chunk hashset mutex poisoned").contains(&position) {
+                if loaded_chunks
+                    .lock()
+                    .expect("Loaded chunk hashset mutex poisoned")
+                    .contains(&position)
+                {
                     continue;
                 }
                 //let noise = noise;
                 let chunk_queue = chunk_queue.clone();
                 let chunk_grid = chunk_grid.clone();
-                loaded_chunks.lock().expect("Loaded chunk hashset mutex poisoned").insert(position);
+                loaded_chunks
+                    .lock()
+                    .expect("Loaded chunk hashset mutex poisoned")
+                    .insert(position);
                 AsyncComputeTaskPool::get()
                     .spawn(async move {
                         let chunk = ChunkGrid::generate_or_load_chunk(position, &noise);
-                        chunk_grid.lock().expect("Chunk grid mutex was poisoned").chunks.insert(position, chunk);
+                        chunk_grid
+                            .lock()
+                            .expect("Chunk grid mutex was poisoned")
+                            .chunks
+                            .insert(position, chunk);
                         chunk_queue
                             .lock()
                             .expect("Chunk queue mutex poisoned")
