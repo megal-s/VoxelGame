@@ -5,6 +5,7 @@ use bevy::{
 use bevy_asset_loader::prelude::*;
 use blocks::{Block, BlockManager};
 use chunk::Chunk;
+use level::Level;
 use noiz::{
     Noise, Sampleable, SampleableFor, ScalableNoise, SeedableNoise,
     cells::OrthoGrid,
@@ -20,6 +21,7 @@ use crate::{
 mod blocks;
 mod chunk;
 mod game;
+mod level;
 
 #[derive(Clone, Eq, PartialEq, Debug, Hash, Default, States)]
 enum GameState {
@@ -37,12 +39,6 @@ struct BlockAssets {
     stone: Handle<Image>,
     #[asset(path = "Dirt.png")]
     dirt: Handle<Image>,
-}
-
-#[derive(Default, Resource)]
-struct ChunkWorld {
-    chunk_grid: ChunkGrid,
-    meshes: HashMap<IVec3, Handle<Mesh>>,
 }
 
 #[derive(Component)]
@@ -100,7 +96,7 @@ fn setup(
 
     // Setup chunks
     // Temporary code, generation will be added later
-    let mut chunk_world = ChunkWorld::default();
+    let mut level = Level::default();
 
     let mut noise = Noise::<Perlin>::default();
     noise.set_seed(10);
@@ -110,7 +106,7 @@ fn setup(
     for x in MIN_CHUNK..=MAX_CHUNK {
         for y in MIN_CHUNK..=MAX_CHUNK {
             for z in MIN_CHUNK..=MAX_CHUNK {
-                chunk_world
+                level
                     .chunk_grid
                     .generate_chunk(IVec3::new(x, y, z), &noise);
             }
@@ -128,7 +124,7 @@ fn setup(
     //     .set(I16Vec3::new(2, 0, 0), Block("doesn't exist".to_string()))
     //     .unwrap();
 
-    // chunk_world.chunk_grid.chunks.insert(
+    // level.chunk_grid.chunks.insert(
     //     IVec3::default(),
     //     Chunk {
     //         position: IVec3::default(),
@@ -137,7 +133,7 @@ fn setup(
     // );
 
     let chunk_meshes =
-        game::chunk_mesh::rebuild_chunk_meshes(&chunk_world.chunk_grid, &block_manager);
+        game::chunk_mesh::rebuild_chunk_meshes(&level.chunk_grid, &block_manager);
 
     let mesh_mat = materials.add(StandardMaterial {
         base_color_texture: Some(block_manager.atlas_texture().expect("Atlas is not built")),
@@ -147,7 +143,7 @@ fn setup(
 
     for (chunk_position, mesh) in chunk_meshes {
         let mesh_handle = meshes.add(mesh);
-        chunk_world
+        level
             .meshes
             .insert(chunk_position, mesh_handle.clone());
         commands.spawn((
@@ -161,7 +157,7 @@ fn setup(
         ));
     }
 
-    commands.insert_resource(chunk_world);
+    commands.insert_resource(level);
 
     // Debug info
     commands.spawn((
