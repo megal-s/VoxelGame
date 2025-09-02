@@ -3,8 +3,8 @@ use bevy::{
     prelude::*, window::PrimaryWindow,
 };
 use bevy_asset_loader::prelude::*;
-use blocks::BlockManager;
-use chunk::{Block, Chunk};
+use blocks::{Block, BlockManager};
+use chunk::Chunk;
 use noiz::{
     Noise, Sampleable, SampleableFor, ScalableNoise, SeedableNoise,
     cells::OrthoGrid,
@@ -204,8 +204,8 @@ fn setup_blocks(
     let block_manager = block_manager.into_inner();
 
     block_manager.set_error_texture(block_assets.error.clone());
-    block_manager.add_block("stone", block_assets.stone.clone());
-    block_manager.add_block("dirt", block_assets.dirt.clone());
+    block_manager.add_block(Block::new("stone"), block_assets.stone.clone());
+    block_manager.add_block(Block::new("dirt"), block_assets.dirt.clone());
 
     block_manager.rebuild_atlas(textures.into_inner());
 

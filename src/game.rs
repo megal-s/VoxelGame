@@ -136,7 +136,7 @@ pub mod chunk_mesh {
                 continue;
             };
 
-            let atlas_rect = block_manager.atlas_location_or_error(&block.0);
+            let atlas_rect = block_manager.atlas_location_or_error(&block);
 
             let block_position =
                 IVec3::new(position.x as i32, position.y as i32, position.z as i32)

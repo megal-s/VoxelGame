@@ -4,6 +4,8 @@ use bevy::{
 };
 use noiz::SampleableFor;
 
+use crate::blocks::Block;
+
 // Could probably be nicer
 pub const CHUNK_SIZE_I16: i16 = 32; // due to i16 having a max value of 32768, this value must not exceed 32
 pub const CHUNK_SIZE_I32: i32 = 32;
@@ -134,7 +136,7 @@ impl ChunkGrid {
                         (height + position.y.abs() * CHUNK_SIZE_I32).min(CHUNK_SIZE_I32 - 1) as i16,
                         z as i16,
                     ),
-                    &Block("stone".to_string()),
+                    &Block::new("stone"),
                 );
             }
         }
@@ -236,9 +238,6 @@ impl BlockGrid {
         Some(())
     }
 }
-
-#[derive(Default, Clone)]
-pub struct Block(pub String);
 
 #[cfg(test)]
 mod test {

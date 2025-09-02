@@ -4,6 +4,19 @@ use bevy::prelude::*;
 
 // TODO: Have a plugin handle this cleaner (including loading textures automatically...)
 
+#[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Block(String);
+
+impl Block {
+    pub fn new(id: &str) -> Self {
+        Self(id.to_string())
+    }
+
+    pub fn id(&self) -> &str {
+        &self.0
+    }
+}
+
 struct BlockData {
     texture: Handle<Image>,
     atlas_location: Option<Rect>,
@@ -11,7 +24,7 @@ struct BlockData {
 
 #[derive(Resource, Default)]
 pub struct BlockManager {
-    blocks: BTreeMap<String, BlockData>, // Using BTreeMap instead of HashMap for garunteed ordering, potentially not needed
+    blocks: BTreeMap<Block, BlockData>, // Using BTreeMap instead of HashMap for garunteed ordering, potentially not needed
 
     error_texture: Option<Handle<Image>>,
     error_atlas_location: Option<Rect>,
@@ -24,9 +37,9 @@ impl BlockManager {
         self.error_texture = Some(texture);
     }
 
-    pub fn add_block(&mut self, name: &str, texture: Handle<Image>) {
+    pub fn add_block(&mut self, block: Block, texture: Handle<Image>) {
         self.blocks.insert(
-            name.to_string(),
+            block,
             BlockData {
                 texture,
                 atlas_location: None,
@@ -34,7 +47,7 @@ impl BlockManager {
         );
     }
 
-    pub fn remove_block(&mut self, block: &str) {
+    pub fn remove_block(&mut self, block: &Block) {
         self.blocks.remove(block);
     }
 
@@ -86,11 +99,11 @@ impl BlockManager {
     }
 
     /// Get location in atlas of the block texture (from 0.0 -> 1.0 for use in UVs)
-    pub fn atlas_location(&self, block: &str) -> Option<Rect> {
+    pub fn atlas_location(&self, block: &Block) -> Option<Rect> {
         self.blocks.get(block)?.atlas_location
     }
 
-    pub fn atlas_location_or_error(&self, block: &str) -> Rect {
+    pub fn atlas_location_or_error(&self, block: &Block) -> Rect {
         self.atlas_location(block).unwrap_or(
             self.error_atlas_location
                 .expect("Error texture has not been defined"),
