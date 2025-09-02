@@ -1,25 +1,17 @@
-use bevy::{
-    DefaultPlugins, app::App, ecs::system::Commands, math::I16Vec3, platform::collections::HashMap,
-    prelude::*, window::PrimaryWindow,
-};
+use bevy::{DefaultPlugins, app::App, ecs::system::Commands, prelude::*, window::PrimaryWindow};
 use bevy_asset_loader::prelude::*;
-use blocks::{Block, BlockManager};
-use chunk::Chunk;
-use noiz::{
-    Noise, Sampleable, SampleableFor, ScalableNoise, SeedableNoise,
-    cells::OrthoGrid,
-    prelude::{PerCell, common_noise::Perlin},
-    rng::{Random, UNorm},
-};
+use blocks::Block;
 
 use crate::{
-    chunk::{BlockGrid, CHUNK_SIZE_F32, ChunkGrid},
+    blocks::BlockManagerResource,
+    chunk::{BlockGrid, ChunkGrid},
     game::camera_movement::MovableCamera,
 };
 
 mod blocks;
 mod chunk;
 mod game;
+mod level;
 
 #[derive(Clone, Eq, PartialEq, Debug, Hash, Default, States)]
 enum GameState {
@@ -39,12 +31,6 @@ struct BlockAssets {
     dirt: Handle<Image>,
 }
 
-#[derive(Default, Resource)]
-struct ChunkWorld {
-    chunk_grid: ChunkGrid,
-    meshes: HashMap<IVec3, Handle<Mesh>>,
-}
-
 #[derive(Component)]
 struct DebugPositionText;
 
@@ -52,7 +38,8 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .add_plugins(game::camera_movement::CameraMovementPlugin)
-        .init_resource::<BlockManager>()
+        .add_plugins(level::ChunkLoaderPlugin)
+        .init_resource::<BlockManagerResource>()
         .init_state::<GameState>()
         .add_loading_state(
             LoadingState::new(GameState::AssetLoading)
@@ -70,9 +57,6 @@ fn main() {
 
 fn setup(
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    block_manager: Res<BlockManager>,
     window_query: Single<&mut Window, With<PrimaryWindow>>,
 ) {
     // Setup window
@@ -97,71 +81,6 @@ fn setup(
             ..Default::default()
         }),
     ));
-
-    // Setup chunks
-    // Temporary code, generation will be added later
-    let mut chunk_world = ChunkWorld::default();
-
-    let mut noise = Noise::<Perlin>::default();
-    noise.set_seed(10);
-    noise.set_period(CHUNK_SIZE_F32);
-    const MIN_CHUNK: i32 = -2;
-    const MAX_CHUNK: i32 = 2;
-    for x in MIN_CHUNK..=MAX_CHUNK {
-        for y in MIN_CHUNK..=MAX_CHUNK {
-            for z in MIN_CHUNK..=MAX_CHUNK {
-                chunk_world
-                    .chunk_grid
-                    .generate_chunk(IVec3::new(x, y, z), &noise);
-            }
-        }
-    }
-
-    // let mut contents = BlockGrid::new();
-    // contents
-    //     .set(I16Vec3::new(0, 0, 0), Block("stone".to_string()))
-    //     .unwrap();
-    // contents
-    //     .set(I16Vec3::new(1, 0, 0), Block("dirt".to_string()))
-    //     .unwrap();
-    // contents
-    //     .set(I16Vec3::new(2, 0, 0), Block("doesn't exist".to_string()))
-    //     .unwrap();
-
-    // chunk_world.chunk_grid.chunks.insert(
-    //     IVec3::default(),
-    //     Chunk {
-    //         position: IVec3::default(),
-    //         contents,
-    //     },
-    // );
-
-    let chunk_meshes =
-        game::chunk_mesh::rebuild_chunk_meshes(&chunk_world.chunk_grid, &block_manager);
-
-    let mesh_mat = materials.add(StandardMaterial {
-        base_color_texture: Some(block_manager.atlas_texture().expect("Atlas is not built")),
-        base_color: Color::WHITE,
-        ..default()
-    });
-
-    for (chunk_position, mesh) in chunk_meshes {
-        let mesh_handle = meshes.add(mesh);
-        chunk_world
-            .meshes
-            .insert(chunk_position, mesh_handle.clone());
-        commands.spawn((
-            Mesh3d(mesh_handle),
-            MeshMaterial3d(mesh_mat.clone()),
-            Transform::from_xyz(
-                chunk_position.x as f32 * CHUNK_SIZE_F32,
-                chunk_position.y as f32 * CHUNK_SIZE_F32,
-                chunk_position.z as f32 * CHUNK_SIZE_F32,
-            ),
-        ));
-    }
-
-    commands.insert_resource(chunk_world);
 
     // Debug info
     commands.spawn((
@@ -199,9 +118,9 @@ fn setup_blocks(
     mut commands: Commands,
     block_assets: Res<crate::BlockAssets>,
     textures: ResMut<Assets<Image>>,
-    block_manager: ResMut<BlockManager>,
+    block_manager: Res<BlockManagerResource>,
 ) {
-    let block_manager = block_manager.into_inner();
+    let mut block_manager = block_manager.into_inner().lock().unwrap();
 
     block_manager.set_error_texture(block_assets.error.clone());
     block_manager.add_block(Block::new("stone"), block_assets.stone.clone());

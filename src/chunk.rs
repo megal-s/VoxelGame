@@ -112,14 +112,13 @@ impl ChunkGrid {
         Some(())
     }
 
-    pub fn generate_or_load_chunk(&mut self, position: IVec3) {
-        // check if chunk file exists and load it if it does
-        //self.generate_chunk(position);
+    pub fn generate_or_load_chunk(position: IVec3, noise: &impl SampleableFor<Vec2, f32>) -> Chunk {
+        Self::generate_chunk(position, noise)
     }
 
-    pub fn generate_chunk(&mut self, position: IVec3, noise: &impl SampleableFor<Vec2, f32>) {
+    pub fn generate_chunk(position: IVec3, noise: &impl SampleableFor<Vec2, f32>) -> Chunk {
         // definitely a better way of doing this, just trying to get something working for now
-        let mut chunk_contents = BlockGrid::new();
+        let mut contents = BlockGrid::new();
         for x in 0..CHUNK_SIZE_I32 {
             let raw_x = position.x * CHUNK_SIZE_I32 + x;
             for z in 0..CHUNK_SIZE_I32 {
@@ -129,7 +128,7 @@ impl ChunkGrid {
                 if height < position.y * CHUNK_SIZE_I32 {
                     continue;
                 }
-                chunk_contents.set_area(
+                contents.set_area(
                     I16Vec3::new(x as i16, 0, z as i16),
                     I16Vec3::new(
                         x as i16,
@@ -140,13 +139,7 @@ impl ChunkGrid {
                 );
             }
         }
-        self.chunks.insert(
-            position,
-            Chunk {
-                position,
-                contents: chunk_contents,
-            },
-        );
+        Chunk { position, contents }
     }
 }
 
