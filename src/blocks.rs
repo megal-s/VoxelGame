@@ -1,4 +1,7 @@
-use std::collections::BTreeMap;
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+};
 
 use bevy::prelude::*;
 
@@ -22,7 +25,10 @@ struct BlockData {
     atlas_location: Option<Rect>,
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource, Default, Deref)]
+pub struct BlockManagerResource(Arc<Mutex<BlockManager>>);
+
+#[derive(Default)]
 pub struct BlockManager {
     blocks: BTreeMap<Block, BlockData>, // Using BTreeMap instead of HashMap for garunteed ordering, potentially not needed
 
