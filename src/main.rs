@@ -111,7 +111,7 @@ fn setup(mut commands: Commands, window_query: Single<&mut Window, With<PrimaryW
 }
 
 fn update_debug_text(
-    level: Res<Level>,
+    //level: Res<Level>,
     camera_query: Single<&Transform, With<Camera>>,
     text_query: Single<&mut Text, With<DebugText>>,
 ) {
@@ -122,12 +122,11 @@ fn update_debug_text(
         camera_position.z as i32,
     );
     text_query.into_inner().0 = format!(
-        "Raw   x/y/z: {}\nBlock x/y/z: {} ({})\nChunk x/y/z: {}\n\nChunk Count: {}",
+        "Raw   x/y/z: {}\nBlock x/y/z: {} ({})\nChunk x/y/z: {}",
         camera_position,
         int_camera_position,
         BlockGrid::to_block_coordinates(int_camera_position),
         ChunkGrid::to_chunk_coordinates(camera_position),
-        level.loaded_chunks.len(),
     );
 }
 
