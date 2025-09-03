@@ -127,7 +127,7 @@ fn update_debug_text(
         int_camera_position,
         BlockGrid::to_block_coordinates(int_camera_position),
         ChunkGrid::to_chunk_coordinates(camera_position),
-        level.chunk_entities.len(),
+        level.loaded_chunks.len(),
     );
 }
 

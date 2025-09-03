@@ -88,7 +88,3 @@ pub mod camera_movement {
         transform.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
     }
 }
-
-mod chunk_file {}
-
-mod world_generation {}
