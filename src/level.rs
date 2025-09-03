@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use bevy::{
-    app::{Plugin, Update},
+    app::{FixedUpdate, Plugin, Update},
     asset::{Assets, Handle},
     color::Color,
     ecs::{
@@ -36,18 +36,19 @@ pub struct ChunkLoaderPlugin;
 
 impl Plugin for ChunkLoaderPlugin {
     fn build(&self, app: &mut bevy::app::App) {
-        //Add resource here, then add systems to interact with it
         app.add_systems(OnEnter(crate::GameState::InGame), setup_level)
             .add_systems(
-                Update,
+                FixedUpdate,
                 (
-                    discard_far_chunks,
                     cleanup_saved_chunks,
+                    discard_far_chunks,
                     generate_nearby_chunks,
-                    build_chunk_meshes,
-                    update_chunk_entities,
                 )
-                    .chain()
+                    .run_if(in_state(crate::GameState::InGame)),
+            )
+            .add_systems(
+                Update,
+                (build_chunk_meshes, update_chunk_entities)
                     .run_if(in_state(crate::GameState::InGame)),
             );
     }
@@ -67,9 +68,9 @@ struct LevelLoadInfo {
     chunk_states: Arc<Mutex<HashMap<IVec3, ChunkLoadState>>>,
 }
 
+#[derive(Debug, Clone)]
 enum ChunkLoadState {
     Uninitialized,
-    Reading, // Intended for once we're loading chunks from disk
     Generating,
     Generated, // May be renamed once chunks are able to be created via means other than generating
     MeshBuilding,
@@ -176,10 +177,14 @@ async fn generate_chunk(
         .expect("Chunk grid mutex poisoned")
         .chunks
         .insert(position, chunk);
-    chunk_states
-        .lock()
-        .expect("Chunk states mutex poisoned")
-        .insert(position, ChunkLoadState::Generated);
+
+    let mut chunk_states = chunk_states.lock().expect("Chunk states mutex poisoned");
+
+    if let Some(state) = chunk_states.get(&position)
+        && let &ChunkLoadState::Generating = state
+    {
+        chunk_states.insert(position, ChunkLoadState::Generated);
+    }
 }
 
 fn build_chunk_meshes(level: Res<Level>, block_manager: Res<BlockManagerResource>) {
@@ -317,10 +322,19 @@ fn discard_far_chunks(
             .keys()
             .filter_map(|position| {
                 let diff = (position - camera_position).abs();
-                if (diff.x <= settings.horizontal_render_distance
+                if diff.x <= settings.horizontal_render_distance
                     && diff.y <= settings.vertical_render_distance
-                    && diff.z <= settings.horizontal_render_distance)
-                    || chunk_states.contains_key(position)
+                    && diff.z <= settings.horizontal_render_distance
+                    // is_some_and() seemingly causes mesh entities that are never destroyed
+                    // but also stops chunks from fully loading only to be unloaded (if stopped during gneration chunks are still put into grid temporarily so that they may be saved (in future))
+                    && !chunk_states.get(position).is_some_and(|state| {
+                        matches!(
+                            state,
+                            ChunkLoadState::Uninitialized
+                                | ChunkLoadState::Generating
+                                | ChunkLoadState::MeshBuilding
+                        )
+                    })
                 {
                     return None;
                 }
