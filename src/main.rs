@@ -6,7 +6,6 @@ use crate::{
     blocks::BlockManagerResource,
     chunk::{BlockGrid, ChunkGrid},
     game::camera_movement::MovableCamera,
-    level::Level,
 };
 
 mod blocks;
@@ -111,7 +110,6 @@ fn setup(mut commands: Commands, window_query: Single<&mut Window, With<PrimaryW
 }
 
 fn update_debug_text(
-    //level: Res<Level>,
     settings: Res<GameSettings>,
     camera_query: Single<&Transform, With<Camera>>,
     text_query: Single<&mut Text, With<DebugText>>,

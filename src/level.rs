@@ -1,7 +1,7 @@
 use std::{
-    io::Read,
     ops::DerefMut,
     sync::{Arc, Mutex, RwLock},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use bevy::{
@@ -105,7 +105,10 @@ fn setup_level(
 ) {
     let block_manager = block_manager.lock().expect("Block manager mutex poisoned");
     commands.insert_resource(Level::new(
-        0,
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as u32,
         materials.add(StandardMaterial {
             base_color_texture: Some(block_manager.atlas_texture().expect("Atlas is not built")),
             base_color: Color::WHITE,
@@ -394,11 +397,15 @@ async fn save_chunk(
     chunk_states: Arc<ChunkStates>,
     position: IVec3,
 ) {
-    chunk_grid
+    let chunk = chunk_grid
         .lock()
         .expect("Chunk grid mutex poisoned")
         .chunks
         .remove(&position);
+    if let Some(chunk) = chunk {
+        // Write here
+    }
+
     let entity = chunk_entities
         .lock()
         .expect("Chunk entities mutex poisoned")
