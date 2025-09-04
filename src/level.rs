@@ -1,4 +1,8 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    io::Read,
+    ops::DerefMut,
+    sync::{Arc, Mutex, RwLock},
+};
 
 use bevy::{
     app::{FixedUpdate, Plugin, Update},
@@ -14,6 +18,7 @@ use bevy::{
     math::{IVec3, Vec2},
     pbr::{MeshMaterial3d, StandardMaterial},
     platform::collections::HashMap,
+    prelude::Deref,
     render::{
         camera::Camera,
         mesh::{Mesh, Mesh3d},
@@ -60,13 +65,11 @@ pub struct Level {
     block_material: Handle<StandardMaterial>,
     chunk_grid: Arc<Mutex<ChunkGrid>>,
     chunk_entities: Arc<Mutex<HashMap<IVec3, Entity>>>,
-    load_info: LevelLoadInfo,
+    chunk_states: Arc<ChunkStates>,
 }
 
-#[derive(Default)]
-struct LevelLoadInfo {
-    chunk_states: Arc<Mutex<HashMap<IVec3, ChunkLoadState>>>,
-}
+#[derive(Default, Deref)]
+struct ChunkStates(RwLock<HashMap<IVec3, Mutex<ChunkLoadState>>>);
 
 #[derive(Debug, Clone)]
 enum ChunkLoadState {
@@ -90,7 +93,7 @@ impl Level {
             block_material: material,
             chunk_grid: Default::default(),
             chunk_entities: Default::default(),
-            load_info: Default::default(),
+            chunk_states: Default::default(),
         }
     }
 }
@@ -116,7 +119,7 @@ fn generate_nearby_chunks(
     settings: Res<GameSettings>,
     camera_query: Single<&Transform, With<Camera>>,
 ) {
-    let Ok(mut chunk_states) = level.load_info.chunk_states.try_lock() else {
+    let Ok(mut chunk_states) = level.chunk_states.try_write() else {
         return;
     };
 
@@ -141,10 +144,10 @@ fn generate_nearby_chunks(
                     continue;
                 }
 
-                chunk_states.insert(position, ChunkLoadState::Uninitialized);
+                chunk_states.insert(position, Mutex::new(ChunkLoadState::Uninitialized));
 
                 let chunk_grid = level.chunk_grid.clone();
-                let chunk_states = level.load_info.chunk_states.clone();
+                let chunk_states = level.chunk_states.clone();
                 let noise = level.noise;
                 AsyncComputeTaskPool::get()
                     .spawn(generate_chunk(chunk_grid, chunk_states, position, noise))
@@ -156,19 +159,21 @@ fn generate_nearby_chunks(
 
 async fn generate_chunk(
     chunk_grid: Arc<Mutex<ChunkGrid>>,
-    chunk_states: Arc<Mutex<HashMap<IVec3, ChunkLoadState>>>,
+    chunk_states: Arc<ChunkStates>,
     position: IVec3,
     noise: impl SampleableFor<Vec2, f32>,
 ) {
     {
-        let mut chunk_states = chunk_states.lock().expect("Chunk states mutex poisoned");
-        if let Some(state) = chunk_states.get(&position)
-            && let &ChunkLoadState::Uninitialized = state
-        {
-            chunk_states.insert(position, ChunkLoadState::Generating);
-        } else {
+        let chunk_states = chunk_states.read().expect("Chunk states rw poisoned");
+        let Some(state_mutex) = chunk_states.get(&position) else {
             return;
         };
+        let mut state = state_mutex.lock().expect("Chunk state mutex poisoned");
+        if !matches!(*state, ChunkLoadState::Uninitialized) {
+            return;
+        }
+
+        *state = ChunkLoadState::Generating;
     }
 
     let chunk = ChunkGrid::generate_or_load_chunk(position, &noise);
@@ -178,30 +183,38 @@ async fn generate_chunk(
         .chunks
         .insert(position, chunk);
 
-    let mut chunk_states = chunk_states.lock().expect("Chunk states mutex poisoned");
-
-    if let Some(state) = chunk_states.get(&position)
-        && let &ChunkLoadState::Generating = state
     {
-        chunk_states.insert(position, ChunkLoadState::Generated);
+        let chunk_states = chunk_states.read().expect("Chunk states rw poisoned");
+        let Some(state_mutex) = chunk_states.get(&position) else {
+            return;
+        };
+        let mut state = state_mutex.lock().expect("Chunk state mutex poisoned");
+        if !matches!(*state, ChunkLoadState::Generating) {
+            return;
+        }
+
+        *state = ChunkLoadState::Generated;
     }
 }
 
 fn build_chunk_meshes(level: Res<Level>, block_manager: Res<BlockManagerResource>) {
-    let Ok(chunk_states) = level.load_info.chunk_states.try_lock() else {
+    let Ok(chunk_states) = level.chunk_states.try_read() else {
         return;
     };
 
-    let generated_chunks = chunk_states
-        .iter()
-        .filter_map(|(position, state)| match state {
+    let generated_chunks = chunk_states.iter().filter_map(|(position, state_mutex)| {
+        let Ok(state) = state_mutex.try_lock() else {
+            return None;
+        };
+        match *state {
             ChunkLoadState::Generated => Some(*position),
             _ => None,
-        });
+        }
+    });
 
     for position in generated_chunks {
         let chunk_grid = level.chunk_grid.clone();
-        let chunk_states = level.load_info.chunk_states.clone();
+        let chunk_states = level.chunk_states.clone();
         let block_manager = block_manager.clone();
         AsyncComputeTaskPool::get()
             .spawn(build_chunk_mesh(
@@ -216,19 +229,21 @@ fn build_chunk_meshes(level: Res<Level>, block_manager: Res<BlockManagerResource
 
 async fn build_chunk_mesh(
     chunk_grid: Arc<Mutex<ChunkGrid>>,
-    chunk_states: Arc<Mutex<HashMap<IVec3, ChunkLoadState>>>,
+    chunk_states: Arc<ChunkStates>,
     block_manager: Arc<Mutex<BlockManager>>,
     position: IVec3,
 ) {
     {
-        let mut chunk_states = chunk_states.lock().expect("Chunk states mutex poisoned");
-        if !matches!(
-            chunk_states.get(&position),
-            Some(&ChunkLoadState::Generated)
-        ) {
+        let chunk_states = chunk_states.read().expect("Chunk states rw poisoned");
+        let Some(state_mutex) = chunk_states.get(&position) else {
+            return;
+        };
+        let mut state = state_mutex.lock().expect("Chunk state mutex poisoned");
+        if !matches!(*state, ChunkLoadState::Generated) {
             return;
         }
-        chunk_states.insert(position, ChunkLoadState::MeshBuilding);
+
+        *state = ChunkLoadState::MeshBuilding;
     }
 
     let mesh = {
@@ -244,12 +259,17 @@ async fn build_chunk_mesh(
         )
     };
 
-    let mut chunk_states = chunk_states.lock().expect("Chunk states mutex poisoned");
-
-    if let Some(state) = chunk_states.get(&position)
-        && let &ChunkLoadState::MeshBuilding = state
     {
-        chunk_states.insert(position, ChunkLoadState::MeshReady(mesh));
+        let chunk_states = chunk_states.read().expect("Chunk states rw poisoned");
+        let Some(state_mutex) = chunk_states.get(&position) else {
+            return;
+        };
+        let mut state = state_mutex.lock().expect("Chunk state mutex poisoned");
+        if !matches!(*state, ChunkLoadState::MeshBuilding) {
+            return;
+        }
+
+        *state = ChunkLoadState::MeshReady(mesh);
     }
 }
 
@@ -258,7 +278,7 @@ fn update_chunk_entities(
     level: Res<Level>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
-    let Ok(mut chunk_states) = level.load_info.chunk_states.try_lock() else {
+    let Ok(mut chunk_states) = level.chunk_states.try_write() else {
         return;
     };
 
@@ -267,10 +287,15 @@ fn update_chunk_entities(
     };
 
     let completed_meshes = chunk_states
-        .iter_mut()
-        .filter_map(|(position, state)| match state {
-            ChunkLoadState::MeshReady(mesh) => Some((*position, mesh.take())),
-            _ => None,
+        .iter()
+        .filter_map(|(position, state_mutex)| {
+            let Ok(mut state) = state_mutex.try_lock() else {
+                return None;
+            };
+            match state.deref_mut() {
+                ChunkLoadState::MeshReady(mesh) => Some((*position, mesh.take())),
+                _ => None,
+            }
         })
         .collect::<Vec<(IVec3, Option<Mesh>)>>();
 
@@ -306,7 +331,7 @@ fn discard_far_chunks(
     settings: Res<GameSettings>,
     camera_query: Single<&Transform, With<Camera>>,
 ) {
-    let Ok(mut chunk_states) = level.load_info.chunk_states.try_lock() else {
+    let Ok(mut chunk_states) = level.chunk_states.try_write() else {
         return;
     };
 
@@ -325,18 +350,21 @@ fn discard_far_chunks(
                 if diff.x <= settings.horizontal_render_distance
                     && diff.y <= settings.vertical_render_distance
                     && diff.z <= settings.horizontal_render_distance
-                    // is_some_and() seemingly causes mesh entities that are never destroyed
-                    // but also stops chunks from fully loading only to be unloaded (if stopped during gneration chunks are still put into grid temporarily so that they may be saved (in future))
-                    && !chunk_states.get(position).is_some_and(|state| {
-                        matches!(
-                            state,
-                            ChunkLoadState::Uninitialized
-                                | ChunkLoadState::Generating
-                                | ChunkLoadState::MeshBuilding
-                        )
-                    })
                 {
                     return None;
+                }
+                if let Some(state_mutex) = chunk_states.get(position) {
+                    let Ok(state) = state_mutex.try_lock() else {
+                        return None;
+                    };
+                    if !matches!(
+                        *state,
+                        ChunkLoadState::Uninitialized
+                            | ChunkLoadState::Generating
+                            | ChunkLoadState::MeshBuilding
+                    ) {
+                        return None;
+                    }
                 }
                 Some(*position)
             })
@@ -344,11 +372,11 @@ fn discard_far_chunks(
     };
 
     for position in far_chunks {
-        chunk_states.insert(position, ChunkLoadState::Saving);
+        chunk_states.insert(position, Mutex::new(ChunkLoadState::Saving)); //NOTE, this should probably be an async block that modifies the mutex (if it exists) rather than setting a new one 
 
         let chunk_grid = level.chunk_grid.clone();
         let chunk_entities = level.chunk_entities.clone();
-        let chunk_states = level.load_info.chunk_states.clone();
+        let chunk_states = level.chunk_states.clone();
         AsyncComputeTaskPool::get()
             .spawn(save_chunk(
                 chunk_grid,
@@ -363,7 +391,7 @@ fn discard_far_chunks(
 async fn save_chunk(
     chunk_grid: Arc<Mutex<ChunkGrid>>,
     chunk_entities: Arc<Mutex<HashMap<IVec3, Entity>>>,
-    chunk_states: Arc<Mutex<HashMap<IVec3, ChunkLoadState>>>,
+    chunk_states: Arc<ChunkStates>,
     position: IVec3,
 ) {
     chunk_grid
@@ -375,23 +403,39 @@ async fn save_chunk(
         .lock()
         .expect("Chunk entities mutex poisoned")
         .remove(&position);
-    let mut chunk_states = chunk_states.lock().expect("Chunk states mutex poisoned");
     match entity {
-        Some(entity) => chunk_states.insert(position, ChunkLoadState::Saved(entity)),
-        None => chunk_states.remove(&position),
+        Some(entity) => {
+            let chunk_states = chunk_states.read().expect("Chunk states rw poisoned");
+            let Some(state_mutex) = chunk_states.get(&position) else {
+                return;
+            };
+            let mut state = state_mutex.lock().expect("Chunk state mutex poisoned");
+            *state = ChunkLoadState::Saved(entity);
+        }
+        None => {
+            chunk_states
+                .write()
+                .expect("Chunk states rw poisoned")
+                .remove(&position);
+        }
     };
 }
 
 fn cleanup_saved_chunks(mut commands: Commands, level: Res<Level>) {
-    let Ok(mut chunk_states) = level.load_info.chunk_states.try_lock() else {
+    let Ok(mut chunk_states) = level.chunk_states.try_write() else {
         return;
     };
 
     let saved_chunks = chunk_states
         .iter()
-        .filter_map(|(position, state)| match state {
-            ChunkLoadState::Saved(entity) => Some((*position, *entity)),
-            _ => None,
+        .filter_map(|(position, state_mutex)| {
+            let Ok(state) = state_mutex.try_lock() else {
+                return None;
+            };
+            match *state {
+                ChunkLoadState::Saved(entity) => Some((*position, entity)),
+                _ => None,
+            }
         })
         .collect::<Vec<(IVec3, Entity)>>();
 
