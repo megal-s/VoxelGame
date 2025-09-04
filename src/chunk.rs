@@ -3,6 +3,8 @@ use bevy::{
     platform::collections::HashMap,
 };
 use noiz::SampleableFor;
+use serde::{Deserialize, Serialize, de};
+use serde_with::serde_as;
 
 use crate::blocks::Block;
 
@@ -112,10 +114,6 @@ impl ChunkGrid {
         Some(())
     }
 
-    pub fn generate_or_load_chunk(position: IVec3, noise: &impl SampleableFor<Vec2, f32>) -> Chunk {
-        Self::generate_chunk(position, noise)
-    }
-
     pub fn generate_chunk(position: IVec3, noise: &impl SampleableFor<Vec2, f32>) -> Chunk {
         // definitely a better way of doing this, just trying to get something working for now
         let mut contents = BlockGrid::new();
@@ -143,12 +141,18 @@ impl ChunkGrid {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Chunk {
+    #[serde(skip)]
+    // No need to serialize/deserialize position as we have it when doing both anyways
     pub position: IVec3,
     pub contents: BlockGrid,
 }
 
+#[serde_as]
+#[derive(Serialize, Deserialize)]
 pub struct BlockGrid {
+    #[serde_as(as = "Box<[Option<_>; CHUNK_BLOCK_COUNT]>")]
     blocks: Box<[Option<Block>; CHUNK_BLOCK_COUNT]>,
 }
 

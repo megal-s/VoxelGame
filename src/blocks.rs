@@ -4,10 +4,11 @@ use std::{
 };
 
 use bevy::prelude::*;
+use serde::{Deserialize, Serialize};
 
 // TODO: Have a plugin handle this cleaner (including loading textures automatically...)
 
-#[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Block(String);
 
 impl Block {

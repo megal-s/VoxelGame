@@ -1,4 +1,5 @@
 use std::{
+    fs::{self},
     ops::DerefMut,
     sync::{Arc, Mutex, RwLock},
     time::{SystemTime, UNIX_EPOCH},
@@ -29,11 +30,12 @@ use bevy::{
     utils::default,
 };
 use noiz::{Noise, SampleableFor, prelude::common_noise::Perlin, rng::NoiseRng};
+use serde::Deserialize;
 
 use crate::{
     GameSettings,
     blocks::{BlockManager, BlockManagerResource},
-    chunk::{CHUNK_SIZE_F32, ChunkGrid},
+    chunk::{CHUNK_SIZE_F32, Chunk, ChunkGrid},
     meshing,
 };
 
@@ -84,6 +86,8 @@ enum ChunkLoadState {
 
 impl Level {
     fn new(seed: u32, material: Handle<StandardMaterial>) -> Self {
+        fs::create_dir_all("save").expect("Failed to create save directory");
+
         Self {
             noise: Noise::<Perlin> {
                 seed: NoiseRng(seed),
@@ -179,7 +183,28 @@ async fn generate_chunk(
         *state = ChunkLoadState::Generating;
     }
 
-    let chunk = ChunkGrid::generate_or_load_chunk(position, &noise);
+    let mut chunk = 'load_or_gen: {
+        let path = format!("save/{}_{}_{}.json", position.x, position.y, position.z);
+        match fs::exists(&path) {
+            // note: File::open covers this already
+            Ok(exists) => {
+                if exists && let Ok(serialized_chunk) = fs::read_to_string(path) {
+                    let mut deserializer = serde_json::Deserializer::from_str(&serialized_chunk);
+                    match Chunk::deserialize(&mut deserializer) {
+                        Ok(deserialized_chunk) => break 'load_or_gen deserialized_chunk,
+                        Err(error) => {
+                            eprintln!("Failed to deserialize chunk at {position}: {error:?}")
+                        }
+                    }
+                }
+            }
+            Err(error) => eprintln!("Error while checking if chunk file exists {:?}", error),
+        }
+
+        ChunkGrid::generate_chunk(position, &noise)
+    };
+    chunk.position = position;
+
     chunk_grid
         .lock()
         .expect("Chunk grid mutex poisoned")
@@ -403,7 +428,16 @@ async fn save_chunk(
         .chunks
         .remove(&position);
     if let Some(chunk) = chunk {
-        // Write here
+        match serde_json::to_string(&chunk) {
+            Ok(serialized_chunk) => {
+                fs::write(
+                    format!("save/{}_{}_{}.json", position.x, position.y, position.z),
+                    serialized_chunk,
+                )
+                .expect("Failed to write chunk");
+            }
+            Err(error) => eprintln!("Failed to serialize chunk at {position}: {error:?}"),
+        }
     }
 
     let entity = chunk_entities
