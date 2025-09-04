@@ -68,7 +68,7 @@ fn main() {
         .add_systems(OnEnter(GameState::InGame), setup)
         .add_systems(
             Update,
-            update_debug_text.run_if(in_state(GameState::InGame)),
+            (update_debug_text, handle_debug_input).run_if(in_state(GameState::InGame)),
         )
         .run();
 }
@@ -112,6 +112,7 @@ fn setup(mut commands: Commands, window_query: Single<&mut Window, With<PrimaryW
 
 fn update_debug_text(
     //level: Res<Level>,
+    settings: Res<GameSettings>,
     camera_query: Single<&Transform, With<Camera>>,
     text_query: Single<&mut Text, With<DebugText>>,
 ) {
@@ -122,12 +123,32 @@ fn update_debug_text(
         camera_position.z as i32,
     );
     text_query.into_inner().0 = format!(
-        "Raw   x/y/z: {}\nBlock x/y/z: {} ({})\nChunk x/y/z: {}",
+        "Raw   x/y/z: {}\nBlock x/y/z: {} ({})\nChunk x/y/z: {}\n\nRender Distance: [h:{}, v:{}]",
         camera_position,
         int_camera_position,
         BlockGrid::to_block_coordinates(int_camera_position),
         ChunkGrid::to_chunk_coordinates(camera_position),
+        settings.horizontal_render_distance,
+        settings.vertical_render_distance
     );
+}
+
+fn handle_debug_input(
+    mut settings: ResMut<GameSettings>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+) {
+    if keyboard_input.just_pressed(KeyCode::ArrowUp) {
+        settings.vertical_render_distance += 1;
+    }
+    if keyboard_input.just_pressed(KeyCode::ArrowDown) {
+        settings.vertical_render_distance -= 1;
+    }
+    if keyboard_input.just_pressed(KeyCode::ArrowRight) {
+        settings.horizontal_render_distance += 1;
+    }
+    if keyboard_input.just_pressed(KeyCode::ArrowLeft) {
+        settings.horizontal_render_distance -= 1;
+    }
 }
 
 fn setup_blocks(
