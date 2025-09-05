@@ -185,20 +185,14 @@ async fn generate_chunk(
 
     let mut chunk = 'load_or_gen: {
         let path = format!("save/{}_{}_{}.json", position.x, position.y, position.z);
-        match fs::exists(&path) {
-            // note: File::open covers this already
-            Ok(exists) => {
-                if exists && let Ok(serialized_chunk) = fs::read_to_string(path) {
-                    let mut deserializer = serde_json::Deserializer::from_str(&serialized_chunk);
-                    match Chunk::deserialize(&mut deserializer) {
-                        Ok(deserialized_chunk) => break 'load_or_gen deserialized_chunk,
-                        Err(error) => {
-                            eprintln!("Failed to deserialize chunk at {position}: {error:?}")
-                        }
-                    }
+        if let Ok(serialized_chunk) = fs::read_to_string(path) {
+            let mut deserializer = serde_json::Deserializer::from_str(&serialized_chunk);
+            match Chunk::deserialize(&mut deserializer) {
+                Ok(deserialized_chunk) => break 'load_or_gen deserialized_chunk,
+                Err(error) => {
+                    eprintln!("Failed to deserialize chunk at {position}: {error:?}")
                 }
             }
-            Err(error) => eprintln!("Error while checking if chunk file exists {:?}", error),
         }
 
         ChunkGrid::generate_chunk(position, &noise)
