@@ -1,9 +1,13 @@
 use bevy::{
     math::{I16Vec3, IVec3, Vec2, Vec3},
     platform::collections::HashMap,
+    prelude::{Deref, DerefMut},
 };
 use noiz::SampleableFor;
-use serde::{Deserialize, Serialize, de};
+use serde::{
+    Deserialize, Serialize,
+    de::{self, Visitor},
+};
 use serde_with::serde_as;
 
 use crate::blocks::Block;
@@ -116,7 +120,7 @@ impl ChunkGrid {
 
     pub fn generate_chunk(position: IVec3, noise: &impl SampleableFor<Vec2, f32>) -> Chunk {
         // definitely a better way of doing this, just trying to get something working for now
-        let mut contents = BlockGrid::new();
+        let mut contents = BlockGrid::default();
         for x in 0..CHUNK_SIZE_I32 {
             let raw_x = position.x * CHUNK_SIZE_I32 + x;
             for z in 0..CHUNK_SIZE_I32 {
@@ -150,19 +154,12 @@ pub struct Chunk {
 }
 
 #[serde_as]
-#[derive(Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct BlockGrid {
-    #[serde_as(as = "Box<[Option<_>; CHUNK_BLOCK_COUNT]>")]
-    blocks: Box<[Option<Block>; CHUNK_BLOCK_COUNT]>,
+    blocks: Blocks,
 }
 
 impl BlockGrid {
-    pub fn new() -> Self {
-        Self {
-            blocks: Box::new([const { None }; CHUNK_BLOCK_COUNT]),
-        }
-    }
-
     pub fn to_block_coord(raw_coordinate: i32) -> i16 {
         let block_coord = raw_coordinate % CHUNK_SIZE_I32;
         if block_coord >= 0 {
@@ -233,6 +230,52 @@ impl BlockGrid {
             }
         }
         Some(())
+    }
+}
+
+#[serde_as]
+#[derive(Serialize, Deref, DerefMut)]
+struct Blocks(
+    #[serde_as(as = "Box<[Option<_>; CHUNK_BLOCK_COUNT]>")] Box<[Option<Block>; CHUNK_BLOCK_COUNT]>,
+);
+
+impl Default for Blocks {
+    fn default() -> Self {
+        Self(Box::new([const { None }; CHUNK_BLOCK_COUNT]))
+    }
+}
+
+impl<'de> Deserialize<'de> for Blocks {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct BlockVisitor;
+
+        impl<'de> Visitor<'de> for BlockVisitor {
+            type Value = Blocks;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str(&format!("array of size {}", { CHUNK_BLOCK_COUNT }))
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::SeqAccess<'de>,
+            {
+                let mut blocks = Blocks::default();
+                for i in 0..CHUNK_BLOCK_COUNT {
+                    let Some(block) = seq.next_element()? else {
+                        break;
+                    };
+                    blocks[i] = block;
+                }
+
+                Ok(blocks)
+            }
+        }
+
+        deserializer.deserialize_seq(BlockVisitor)
     }
 }
 
