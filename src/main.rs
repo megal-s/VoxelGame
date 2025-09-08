@@ -5,12 +5,12 @@ use blocks::Block;
 use crate::{
     blocks::BlockManagerResource,
     chunk::{BlockGrid, ChunkGrid},
-    game::camera_movement::MovableCamera,
+    camera_control::MovableCamera,
 };
 
 mod blocks;
 mod chunk;
-mod game;
+mod camera_control;
 mod level;
 mod meshing;
 
@@ -53,7 +53,7 @@ struct DebugText;
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
-        .add_plugins(game::camera_movement::CameraMovementPlugin)
+        .add_plugins(camera_control::CameraMovementPlugin)
         .add_plugins(level::ChunkLoaderPlugin)
         .init_resource::<BlockManagerResource>()
         .insert_resource(GameSettings::default())
