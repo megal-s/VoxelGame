@@ -1,35 +1,107 @@
-use bevy::{DefaultPlugins, app::App, ecs::system::Commands, prelude::*, window::PrimaryWindow};
-use bevy_asset_loader::prelude::*;
-use blocks::Block;
+/* (MVP) Things needed:
+ *  > Chunk modules
+ *      - Render
+ *          - Meshing [✓]
+ *      - Logic
+ *          - Storage [✓]
+ *          - Generation
+ *          - Saving
+ *          - Loading
+ *  > Block modules
+ *      - Render
+ *          - Mesh info [✓]
+ *      - Logic
+ *          - ID [✓]
+ *  > Player modules
+ *      - Camera movement
+ *      - Block interactions
+ *  > Atlasing
+ *      - Folder definition
+ *      - Stitching not bound by startup
+ *  > Level
+ *      - Settings
+ *          - ID
+ *          - Seed
+ *      - Generation
+ *      - Saving
+ *      - Loading
+ *  > Game state
+ *      - Startup
+ *      - Resource parsing/atlasing
+ *      - Paused
+ */
+
+use std::sync::Arc;
+
+use bevy::{
+    DefaultPlugins,
+    app::{App, Update},
+    asset::Assets,
+    core_pipeline::core_3d::Camera3d,
+    ecs::{
+        component::Component,
+        query::With,
+        resource::Resource,
+        schedule::IntoScheduleConfigs,
+        system::{Commands, Res, ResMut, Single},
+    },
+    image::Image,
+    input::{ButtonInput, keyboard::KeyCode},
+    math::IVec3,
+    pbr::AmbientLight,
+    render::camera::{Camera, PerspectiveProjection, Projection},
+    state::{
+        app::AppExtStates,
+        commands::CommandsStatesExt,
+        condition::in_state,
+        state::{OnEnter, States},
+    },
+    transform::components::Transform,
+    ui::{Node, PositionType, Val, widget::Text},
+    window::{PrimaryWindow, Window},
+};
+use bevy_asset_loader::loading_state::{
+    LoadingState, LoadingStateAppExt, config::ConfigureLoadingState,
+};
+use serde::{Deserialize, Serialize};
 
 use crate::{
-    blocks::BlockManagerResource,
-    chunk::{BlockGrid, ChunkGrid},
+    block::{Block, BlockAssets, BlockAtlasManager},
     camera_control::MovableCamera,
+    chunk::{Chunk, ChunkGrid},
 };
 
-mod blocks;
-mod chunk;
+mod atlas;
+mod block;
 mod camera_control;
+mod chunk;
 mod level;
-mod meshing;
+
+pub const DEFAULT_NAMESPACE: &str = "builtin";
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct Identifier(pub String, pub String);
+
+impl Identifier {
+    pub fn as_string(&self) -> String {
+        format!("{}:{}", self.0, self.1)
+    }
+
+    pub fn with_path(&self, path: &str) -> Self {
+        Self(self.0.clone(), path.to_owned())
+    }
+
+    pub fn with_namespace(&self, namespace: &str) -> Self {
+        Self(namespace.to_owned(), self.1.clone())
+    }
+}
 
 #[derive(Clone, Eq, PartialEq, Debug, Hash, Default, States)]
 enum GameState {
     #[default]
     AssetLoading,
-    CreateAtlas,
+    CreateAtlases,
     InGame,
-}
-
-#[derive(AssetCollection, Resource)]
-struct BlockAssets {
-    #[asset(path = "Error.png")]
-    error: Handle<Image>,
-    #[asset(path = "Stone.png")]
-    stone: Handle<Image>,
-    #[asset(path = "Dirt.png")]
-    dirt: Handle<Image>,
 }
 
 #[derive(Resource)]
@@ -52,19 +124,19 @@ struct DebugText;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
+        .add_plugins(DefaultPlugins) // TODO; replace with only those needed
         .add_plugins(camera_control::CameraMovementPlugin)
-        .add_plugins(level::ChunkLoaderPlugin)
-        .init_resource::<BlockManagerResource>()
+        .add_plugins(level::LevelPlugin)
         .insert_resource(GameSettings::default())
+        .init_resource::<BlockAtlasManager>()
         .init_state::<GameState>()
         .add_loading_state(
             LoadingState::new(GameState::AssetLoading)
-                .continue_to_state(GameState::CreateAtlas)
+                .continue_to_state(GameState::CreateAtlases)
                 .load_collection::<BlockAssets>(),
         )
-        .add_systems(OnEnter(GameState::CreateAtlas), setup_blocks)
-        .add_systems(OnEnter(GameState::InGame), setup)
+        .add_systems(OnEnter(GameState::CreateAtlases), setup_atlases)
+        .add_systems(OnEnter(GameState::InGame), setup_world)
         .add_systems(
             Update,
             (update_debug_text, handle_debug_input).run_if(in_state(GameState::InGame)),
@@ -72,7 +144,7 @@ fn main() {
         .run();
 }
 
-fn setup(mut commands: Commands, window_query: Single<&mut Window, With<PrimaryWindow>>) {
+fn setup_world(mut commands: Commands, window_query: Single<&mut Window, With<PrimaryWindow>>) {
     // Setup window
     let mut window = window_query.into_inner();
     window.cursor_options.grab_mode = bevy::window::CursorGrabMode::Confined;
@@ -104,9 +176,32 @@ fn setup(mut commands: Commands, window_query: Single<&mut Window, With<PrimaryW
             position_type: PositionType::Absolute,
             top: Val::Px(5.0),
             left: Val::Px(5.0),
-            ..default()
+            ..Default::default()
         },
     ));
+}
+
+fn setup_atlases(
+    mut commands: Commands,
+    block_assets: Res<BlockAssets>,
+    textures: ResMut<Assets<Image>>,
+    mut block_atlas_manager: ResMut<BlockAtlasManager>,
+) {
+    let block_manager = Arc::make_mut(&mut block_atlas_manager.0);
+
+    block_manager.set_error_texture(block_assets.error.clone());
+    block_manager.add_data(
+        Identifier(DEFAULT_NAMESPACE.to_owned(), "stone".to_owned()),
+        block_assets.stone.clone(),
+    );
+    block_manager.add_data(
+        Identifier(DEFAULT_NAMESPACE.to_owned(), "dirt".to_owned()),
+        block_assets.dirt.clone(),
+    );
+
+    block_manager.rebuild_atlas(textures.into_inner());
+
+    commands.set_state(crate::GameState::InGame);
 }
 
 fn update_debug_text(
@@ -124,7 +219,7 @@ fn update_debug_text(
         "Raw   x/y/z: {}\nBlock x/y/z: {} ({})\nChunk x/y/z: {}\n\nRender Distance: [h:{}, v:{}]",
         camera_position,
         int_camera_position,
-        BlockGrid::to_block_coordinates(int_camera_position),
+        Chunk::to_block_coordinates(int_camera_position),
         ChunkGrid::to_chunk_coordinates(camera_position),
         settings.horizontal_render_distance,
         settings.vertical_render_distance
@@ -147,21 +242,4 @@ fn handle_debug_input(
     if keyboard_input.just_pressed(KeyCode::ArrowLeft) {
         settings.horizontal_render_distance -= 1;
     }
-}
-
-fn setup_blocks(
-    mut commands: Commands,
-    block_assets: Res<crate::BlockAssets>,
-    textures: ResMut<Assets<Image>>,
-    block_manager: Res<BlockManagerResource>,
-) {
-    let mut block_manager = block_manager.into_inner().lock().unwrap();
-
-    block_manager.set_error_texture(block_assets.error.clone());
-    block_manager.add_block(Block::new("stone"), block_assets.stone.clone());
-    block_manager.add_block(Block::new("dirt"), block_assets.dirt.clone());
-
-    block_manager.rebuild_atlas(textures.into_inner());
-
-    commands.set_state(crate::GameState::InGame);
 }
