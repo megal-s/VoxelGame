@@ -23,7 +23,7 @@
  *          - ID [✓]
  *          - Seed [✓]
  *      - Generation [✓]
- *      - Saving 
+ *      - Saving
  *      - Loading
  *  > Game state
  *      - Startup
@@ -56,6 +56,7 @@ use bevy::{
         condition::in_state,
         state::{OnEnter, States},
     },
+    text::TextLayout,
     transform::components::Transform,
     ui::{Node, PositionType, Val, widget::Text},
     window::{PrimaryWindow, Window},
@@ -66,9 +67,10 @@ use bevy_asset_loader::loading_state::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    block::{BlockAssets, BlockAtlasManager},
+    block::{Block, BlockAssets, BlockAtlasManager},
     camera_control::MovableCamera,
     chunk::{Chunk, ChunkGrid},
+    level::Level,
 };
 
 mod atlas;
@@ -83,6 +85,10 @@ pub const DEFAULT_NAMESPACE: &str = "builtin";
 pub struct Identifier(pub String, pub String);
 
 impl Identifier {
+    pub fn new(namespace: &str, path: &str) -> Self {
+        Self(namespace.to_owned(), path.to_owned())
+    }
+
     pub fn as_string(&self) -> String {
         format!("{}:{}", self.0, self.1)
     }
@@ -179,6 +185,17 @@ fn setup_world(mut commands: Commands, window_query: Single<&mut Window, With<Pr
             ..Default::default()
         },
     ));
+
+    commands.spawn((
+        Text::new("[Arrow Keys]: Change render distance\n[E]: Place block\n[Q]: Remove block"),
+        TextLayout::new_with_justify(bevy::text::JustifyText::Right),
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(5.0),
+            right: Val::Px(5.0),
+            ..Default::default()
+        },
+    ));
 }
 
 fn setup_atlases(
@@ -209,7 +226,7 @@ fn update_debug_text(
     camera_query: Single<&Transform, With<Camera>>,
     text_query: Single<&mut Text, With<DebugText>>,
 ) {
-    let camera_position = camera_query.into_inner().translation;
+    let camera_position = camera_query.translation;
     let int_camera_position = IVec3::new(
         camera_position.x as i32,
         camera_position.y as i32,
@@ -227,8 +244,10 @@ fn update_debug_text(
 }
 
 fn handle_debug_input(
+    mut level: ResMut<Level>,
     mut settings: ResMut<GameSettings>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
+    camera_query: Single<&Transform, With<Camera>>,
 ) {
     if keyboard_input.just_pressed(KeyCode::ArrowUp) {
         settings.vertical_render_distance += 1;
@@ -241,5 +260,27 @@ fn handle_debug_input(
     }
     if keyboard_input.just_pressed(KeyCode::ArrowLeft) {
         settings.horizontal_render_distance -= 1;
+    }
+    let mut rebuild_mesh = false;
+    if keyboard_input.just_pressed(KeyCode::KeyE) {
+        println!("Setting");
+        rebuild_mesh |= level
+            .get_chunk_grid()
+            .set_block(
+                camera_query.translation.as_ivec3(),
+                Some(Block::new(Identifier::new(DEFAULT_NAMESPACE, "dirt"))),
+            )
+            .is_some();
+        println!("Set");
+    }
+    if keyboard_input.just_pressed(KeyCode::KeyQ) {
+        rebuild_mesh |= level
+            .get_chunk_grid()
+            .set_block(camera_query.translation.as_ivec3(), None)
+            .is_some();
+    }
+    if rebuild_mesh {
+        println!("Rebuilding");
+        level.rebuild_mesh(ChunkGrid::to_chunk_coordinates(camera_query.translation));
     }
 }
