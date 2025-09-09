@@ -4,26 +4,26 @@
  *          - Meshing [✓]
  *      - Logic
  *          - Storage [✓]
- *          - Generation
- *          - Saving
- *          - Loading
+ *          - Generation [✓]
+ *          - Saving [✓]
+ *          - Loading [✓]
  *  > Block modules
  *      - Render
  *          - Mesh info [✓]
  *      - Logic
  *          - ID [✓]
  *  > Player modules
- *      - Camera movement
+ *      - Camera movement [✓]
  *      - Block interactions
  *  > Atlasing
  *      - Folder definition
  *      - Stitching not bound by startup
  *  > Level
  *      - Settings
- *          - ID
- *          - Seed
- *      - Generation
- *      - Saving
+ *          - ID [✓]
+ *          - Seed [✓]
+ *      - Generation [✓]
+ *      - Saving 
  *      - Loading
  *  > Game state
  *      - Startup

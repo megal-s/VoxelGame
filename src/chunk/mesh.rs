@@ -10,7 +10,7 @@ use crate::{
     chunk::{self, Chunk, SIZE_USIZE, Z_INDEX_USIZE},
 };
 
-/// Will return `None` if either [`Weak`] was invalidated while generating and `Some(None)` if there the mesh would have been empty
+/// Will return `None` if either [`Weak`] was invalidated while generating and `Some(None)` if the mesh would have been empty
 pub fn build_mesh(chunk: Weak<Chunk>, atlas_manager: Weak<AtlasManager>) -> Option<Option<Mesh>> {
     let mut positions = Vec::new();
     let mut normals = Vec::new();
