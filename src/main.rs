@@ -66,7 +66,7 @@ use bevy_asset_loader::loading_state::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    block::{Block, BlockAssets, BlockAtlasManager},
+    block::{BlockAssets, BlockAtlasManager},
     camera_control::MovableCamera,
     chunk::{Chunk, ChunkGrid},
 };

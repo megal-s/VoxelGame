@@ -53,7 +53,7 @@ pub struct Chunk {
 
 #[serde_as]
 #[derive(Serialize, Deref, DerefMut)]
-struct SerializableChunkContents(
+pub struct SerializableChunkContents(
     #[serde_as(as = "Box<[Option<_>; CONTENTS_SIZE]>")] Box<[Option<Block>; CONTENTS_SIZE]>,
 );
 
