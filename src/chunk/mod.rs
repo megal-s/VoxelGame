@@ -1,7 +1,4 @@
-use std::{
-    ops::Deref,
-    sync::{Arc, RwLock},
-};
+use std::sync::{Arc, RwLock};
 
 use bevy::{
     math::{I16Vec3, IVec3, Vec2, Vec3},
@@ -46,18 +43,11 @@ impl ChunkGrid {
         )
     }
 
-    pub fn to_chunk_coordinates_from_ivec3(block_coordinates: IVec3) -> IVec3 {
-        IVec3::new(
-            Self::to_chunk_coord(block_coordinates.x as f32),
-            Self::to_chunk_coord(block_coordinates.y as f32),
-            Self::to_chunk_coord(block_coordinates.z as f32),
-        )
-    }
-
-    /// This will block the current thread due to a call to RwLock::write()
+    /// This will block the current thread due to a call to RwLock::write()<br>
+    /// Using this function is not recommended unless you are <b>ONLY</b> setting one block
     pub fn set_block(&self, block_coordinates: IVec3, block: Option<Block>) -> Option<()> {
         self.0
-            .get(&Self::to_chunk_coordinates_from_ivec3(block_coordinates))?
+            .get(&Self::to_chunk_coordinates(block_coordinates.as_vec3()))?
             .write()
             .expect("Chunk rw poisoned")
             .contents[Chunk::to_index(Chunk::to_block_coordinates(block_coordinates))] = block;

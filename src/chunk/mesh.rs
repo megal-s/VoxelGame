@@ -33,12 +33,10 @@ pub fn build_mesh(
         };
 
         let (x, y, z) = {
-            let block_position = Chunk::to_block_coordinates_from_index(index).unwrap();
-            (
-                block_position.x as f32,
-                block_position.y as f32,
-                block_position.z as f32,
-            )
+            let block_position = Chunk::to_block_coordinates_from_index(index)
+                .unwrap()
+                .as_vec3();
+            (block_position.x, block_position.y, block_position.z)
         };
 
         // May be worth storing chunk.upgrade() as a local variable instead of calling Weak::upgrade for each face

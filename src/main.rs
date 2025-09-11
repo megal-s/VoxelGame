@@ -67,7 +67,7 @@ use bevy_asset_loader::loading_state::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    block::{Block, BlockAssets, BlockAtlasManager},
+    block::{Block, BlockAssets, BlockAtlasManager, BlockRaycast},
     camera_control::MovableCamera,
     chunk::{Chunk, ChunkGrid},
     level::Level,
@@ -261,26 +261,54 @@ fn handle_debug_input(
     if keyboard_input.just_pressed(KeyCode::ArrowLeft) {
         settings.horizontal_render_distance -= 1;
     }
-    let mut rebuild_mesh = false;
+    let mut block_interaction = None;
     if keyboard_input.just_pressed(KeyCode::KeyE) {
-        println!("Setting");
-        rebuild_mesh |= level
-            .get_chunk_grid()
-            .set_block(
-                camera_query.translation.as_ivec3(),
-                Some(Block::new(Identifier::new(DEFAULT_NAMESPACE, "dirt"))),
-            )
-            .is_some();
-        println!("Set");
+        block_interaction = Some(true);
     }
     if keyboard_input.just_pressed(KeyCode::KeyQ) {
-        rebuild_mesh |= level
-            .get_chunk_grid()
-            .set_block(camera_query.translation.as_ivec3(), None)
-            .is_some();
+        block_interaction = Some(false);
     }
-    if rebuild_mesh {
-        println!("Rebuilding");
-        level.rebuild_mesh(ChunkGrid::to_chunk_coordinates(camera_query.translation));
+
+    let Some(block_interaction) = block_interaction else {
+        return;
+    };
+
+    let mut chunk_position = ChunkGrid::to_chunk_coordinates(camera_query.translation);
+    let Some(mut chunk) = level.get_chunk_grid().0.get(&chunk_position) else {
+        return;
+    };
+    let mut raycast = BlockRaycast::from_origin_in_direction(
+        camera_query.translation,
+        camera_query.forward().normalize(),
+    );
+    let rebuild = loop {
+        let position = raycast.query_position();
+        {
+            let current_chunk_position = ChunkGrid::to_chunk_coordinates(position);
+            if current_chunk_position != chunk_position {
+                let Some(c) = level.get_chunk_grid().0.get(&current_chunk_position) else {
+                    break None;
+                };
+                chunk_position = current_chunk_position;
+                chunk = c;
+            }
+        }
+
+        let index = Chunk::to_index(Chunk::to_block_coordinates(position.floor().as_ivec3()));
+        if chunk.read().expect("Chunk rw poisoned").contents[index].is_none() {
+            raycast.step();
+            continue;
+        }
+        if block_interaction {
+            chunk.write().expect("Chunk rw poisoned").contents[index] =
+                Some(Block::new(Identifier::new(DEFAULT_NAMESPACE, "dirt")));
+        } else {
+            chunk.write().expect("Chunk rw poisoned").contents[index] = None;
+        }
+        break Some(position);
+    };
+
+    if let Some(position) = rebuild {
+        level.rebuild_mesh(ChunkGrid::to_chunk_coordinates(position));
     }
 }
