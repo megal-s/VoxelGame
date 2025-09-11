@@ -1,4 +1,4 @@
-use std::sync::Weak;
+use std::sync::{RwLock, Weak};
 
 use bevy::{
     asset::RenderAssetUsages,
@@ -11,7 +11,10 @@ use crate::{
 };
 
 /// Will return `None` if either [`Weak`] was invalidated while generating and `Some(None)` if the mesh would have been empty
-pub fn build_mesh(chunk: Weak<Chunk>, atlas_manager: Weak<AtlasManager>) -> Option<Option<Mesh>> {
+pub fn build_mesh(
+    chunk: Weak<RwLock<Chunk>>,
+    atlas_manager: Weak<AtlasManager>,
+) -> Option<Option<Mesh>> {
     let mut positions = Vec::new();
     let mut normals = Vec::new();
     let mut indices = Vec::new();
@@ -20,7 +23,8 @@ pub fn build_mesh(chunk: Weak<Chunk>, atlas_manager: Weak<AtlasManager>) -> Opti
 
     for index in 0..chunk::CONTENTS_SIZE {
         let atlas_rect = {
-            let Some(ref block) = chunk.upgrade()?.contents[index] else {
+            let rw_lock = chunk.upgrade()?;
+            let Some(ref block) = rw_lock.read().expect("Chunk rw poisoned").contents[index] else {
                 continue;
             };
             atlas_manager
@@ -44,6 +48,8 @@ pub fn build_mesh(chunk: Weak<Chunk>, atlas_manager: Weak<AtlasManager>) -> Opti
         if index / SIZE_USIZE % SIZE_USIZE != SIZE_USIZE - 1
             && chunk
                 .upgrade()?
+                .read()
+                .expect("Chunk rw poisoned")
                 .contents
                 .get(index + SIZE_USIZE)
                 .is_none_or(|block| block.is_none())
@@ -81,6 +87,8 @@ pub fn build_mesh(chunk: Weak<Chunk>, atlas_manager: Weak<AtlasManager>) -> Opti
         if index / SIZE_USIZE % SIZE_USIZE != 0
             && chunk
                 .upgrade()?
+                .read()
+                .expect("Chunk rw poisoned")
                 .contents
                 .get(index - SIZE_USIZE)
                 .is_none_or(|block| block.is_none())
@@ -117,6 +125,8 @@ pub fn build_mesh(chunk: Weak<Chunk>, atlas_manager: Weak<AtlasManager>) -> Opti
         if index % SIZE_USIZE != SIZE_USIZE - 1
             && chunk
                 .upgrade()?
+                .read()
+                .expect("Chunk rw poisoned")
                 .contents
                 .get(index + 1)
                 .is_none_or(|block| block.is_none())
@@ -153,6 +163,8 @@ pub fn build_mesh(chunk: Weak<Chunk>, atlas_manager: Weak<AtlasManager>) -> Opti
         if index % SIZE_USIZE != 0
             && chunk
                 .upgrade()?
+                .read()
+                .expect("Chunk rw poisoned")
                 .contents
                 .get(index - 1)
                 .is_none_or(|block| block.is_none())
@@ -189,6 +201,8 @@ pub fn build_mesh(chunk: Weak<Chunk>, atlas_manager: Weak<AtlasManager>) -> Opti
         if index / Z_INDEX_USIZE != SIZE_USIZE - 1
             && chunk
                 .upgrade()?
+                .read()
+                .expect("Chunk rw poisoned")
                 .contents
                 .get(index + Z_INDEX_USIZE)
                 .is_none_or(|block| block.is_none())
@@ -225,6 +239,8 @@ pub fn build_mesh(chunk: Weak<Chunk>, atlas_manager: Weak<AtlasManager>) -> Opti
         if index / Z_INDEX_USIZE != 0
             && chunk
                 .upgrade()?
+                .read()
+                .expect("Chunk rw poisoned")
                 .contents
                 .get(index - Z_INDEX_USIZE)
                 .is_none_or(|block| block.is_none())

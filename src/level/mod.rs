@@ -59,11 +59,22 @@ impl Plugin for LevelPlugin {
 
 /// Resource from which all level data is defined and accessed
 #[derive(Resource)]
-struct Level {
+pub struct Level {
     level_properties: LevelProperties,
     chunk_properties: ChunkProperties,
     mesh_properties: MeshProperties,
     bevy_properties: BevyProperties,
+}
+
+impl Level {
+    // Note: meshes should be able to be pushed by priority here somehow so that updates after block modification arent delayed
+    pub fn rebuild_mesh(&mut self, position: IVec3) {
+        self.mesh_properties.remesh.insert(position);
+    }
+
+    pub fn get_chunk_grid(&self) -> &ChunkGrid {
+        &self.chunk_properties.chunk_grid
+    }
 }
 
 struct LevelProperties {
@@ -249,7 +260,7 @@ fn finalize_chunk_generation(mut level: ResMut<Level>) {
             .chunk_properties
             .chunk_grid
             .0
-            .insert(position, Arc::new(chunk));
+            .insert(position, Arc::new(RwLock::new(chunk)));
         level.mesh_properties.remesh.insert(position);
     }
 }
@@ -264,10 +275,10 @@ fn handle_remesh_queue(mut level: ResMut<Level>, block_manager: Res<BlockAtlasMa
     let mesh_states_lock = level.mesh_properties.mesh_states.clone();
     let task_pool = AsyncComputeTaskPool::get();
     for position in level.mesh_properties.remesh.drain().collect::<Vec<IVec3>>() {
-        mesh_states.insert(position, Mutex::new(ChunkMeshState::Unmeshed));
         let Some(chunk) = level.chunk_properties.chunk_grid.0.get(&position) else {
             continue;
         };
+        mesh_states.insert(position, Mutex::new(ChunkMeshState::Unmeshed));
         task_pool
             .spawn(remesh_chunk(
                 mesh_states_lock.clone(),
@@ -281,7 +292,7 @@ fn handle_remesh_queue(mut level: ResMut<Level>, block_manager: Res<BlockAtlasMa
 
 async fn remesh_chunk(
     mesh_states: Arc<RwLock<HashMap<IVec3, Mutex<ChunkMeshState>>>>,
-    chunk: Weak<Chunk>,
+    chunk: Weak<RwLock<Chunk>>,
     atlas_manager: Weak<AtlasManager>,
     position: IVec3,
 ) {
@@ -385,7 +396,7 @@ fn remove_far_chunks(
             let diff = (position - camera_position).abs();
             diff.x > render_distance.x || diff.y > render_distance.y || diff.z > render_distance.x
         })
-        .collect::<Vec<(IVec3, Arc<Chunk>)>>();
+        .collect::<Vec<(IVec3, Arc<RwLock<Chunk>>)>>();
 
     let task_pool = IoTaskPool::get();
     for (position, chunk) in far_chunks {
@@ -426,8 +437,9 @@ async fn save_chunk(
     chunk_states: Arc<RwLock<HashMap<IVec3, Mutex<ChunkGenerationState>>>>,
     mesh_states: Arc<RwLock<HashMap<IVec3, Mutex<ChunkMeshState>>>>,
     file_path: String,
-    chunk: Chunk,
+    chunk: RwLock<Chunk>,
 ) {
+    let chunk = chunk.read().expect("Chunk rw poisoned");
     mesh_states
         .write()
         .expect("Mesh states rw poisoned")
@@ -437,7 +449,7 @@ async fn save_chunk(
         .expect("Chunk states rw poisoned")
         .insert(chunk.position, Mutex::new(ChunkGenerationState::Removed));
 
-    match serde_json::to_string(&chunk) {
+    match serde_json::to_string(&*chunk) {
         Ok(serialized_chunk) => {
             fs::write(
                 format!(
