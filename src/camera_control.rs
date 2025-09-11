@@ -71,8 +71,8 @@ fn control_camera(
     yaw += -mouse_motion.delta.x * movable_camera.sensitivity;
 
     const PITCH_MAX: f32 = FRAC_PI_2 - 0.01;
-    pitch = (pitch - mouse_motion.delta.y * movable_camera.sensitivity)
-        .clamp(-PITCH_MAX, PITCH_MAX);
+    pitch =
+        (pitch - mouse_motion.delta.y * movable_camera.sensitivity).clamp(-PITCH_MAX, PITCH_MAX);
 
     transform.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
 }
