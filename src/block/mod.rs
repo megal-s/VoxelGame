@@ -1,11 +1,6 @@
 use std::sync::Arc;
 
-use bevy::{
-    asset::Handle,
-    ecs::resource::Resource,
-    image::Image,
-    math::{BVec3, IVec3, Vec3, Vec3Swizzles},
-};
+use bevy::{asset::Handle, ecs::resource::Resource, image::Image, math::Vec3};
 use bevy_asset_loader::asset_collection::AssetCollection;
 use serde::{Deserialize, Serialize};
 
@@ -36,13 +31,11 @@ impl Block {
 }
 
 pub struct BlockRaycast {
-    origin: Vec3,
-    direction: Vec3,
-    step: IVec3,
-    next_position: IVec3,
-    bound_difference: Vec3,
-    next_bounds: Vec3,
-    bounds_mask: BVec3,
+    pub position: Vec3,
+    step: Vec3,
+    delta: Vec3,
+    bound: Vec3,
+    pub normal: Vec3,
 }
 
 impl BlockRaycast {
@@ -51,8 +44,6 @@ impl BlockRaycast {
     }
 
     pub fn from_origin_in_direction(origin: Vec3, mut direction: Vec3) -> Self {
-        let block_origin = origin.floor();
-
         if direction.x == 0. {
             direction.x = 0.00001;
         }
@@ -65,37 +56,70 @@ impl BlockRaycast {
         direction = direction.normalize();
 
         let step = direction.signum();
-        let bounds_difference = (Vec3::ONE / direction).abs();
-        let next_bounds = (step * (block_origin - origin) + (step * 0.5) + 0.5) * bounds_difference;
+        let delta = step / direction;
+
+        let floored_origin = origin.floor();
+        let bound = Vec3::new(
+            Self::max(origin.x, floored_origin.x, step.x, direction.x),
+            Self::max(origin.y, floored_origin.y, step.y, direction.y),
+            Self::max(origin.z, floored_origin.z, step.z, direction.z),
+        );
 
         Self {
-            origin,
-            direction,
-            step: step.as_ivec3(),
-            next_position: block_origin.as_ivec3(),
-            bound_difference: bounds_difference,
-            next_bounds,
-            bounds_mask: BVec3::FALSE,
+            position: floored_origin,
+            step,
+            delta,
+            bound,
+            normal: Vec3::ZERO,
         }
     }
 
+    pub fn _from_origin_in_direction(origin: Vec3, mut direction: Vec3) -> Self {
+        let floored_origin = origin.floor();
+        if direction.x == 0. {
+            direction.x = 0.00001;
+        }
+        if direction.y == 0. {
+            direction.y = 0.00001;
+        }
+        if direction.z == 0. {
+            direction.z = 0.00001;
+        }
+        direction = direction.normalize() * 100.;
+        let inverse_direction = 1. / direction;
+        let step = direction.signum();
+        let delta = (inverse_direction * step).min(Vec3::splat(1.));
+        let bound = (((floored_origin + step.max(Vec3::ZERO)) - origin) * inverse_direction).abs();
+
+        Self {
+            position: floored_origin,
+            step,
+            delta,
+            bound,
+            normal: Vec3::ZERO,
+        }
+    }
+
+    fn max(x: f32, fx: f32, s: f32, d: f32) -> f32 {
+        //(if d > 0. {x.ceil()-x} else {x-x.floor()}) / d.abs()
+        ((fx + (if s > 0. { 1. } else { 0. })) - x) / d
+    }
+
     pub fn step(&mut self) {
-        self.bounds_mask = self
-            .next_bounds
-            .cmple(self.next_bounds.yzx().min(self.next_bounds.zxy()));
-        self.next_position += self.step * IVec3::from(self.bounds_mask);
-        self.next_bounds += self.bound_difference * Vec3::from(self.bounds_mask);
-    }
-
-    pub fn query_distance(&self) -> f32 {
-        ((self.next_bounds - self.bound_difference) * Vec3::from(self.bounds_mask)).element_sum()
-    }
-
-    pub fn query_position(&self) -> Vec3 {
-        self.origin + (self.direction * self.query_distance())
-    }
-
-    pub fn query_normal(&self) -> IVec3 {
-        -self.step * IVec3::from(self.bounds_mask)
+        if self.bound.x < self.bound.y && self.bound.x < self.bound.z {
+            self.position.x += self.step.x;
+            self.bound.x += self.delta.x;
+            self.normal = Vec3::X * -self.step;
+            return;
+        }
+        if self.bound.y < self.bound.z {
+            self.position.y += self.step.y;
+            self.bound.y += self.delta.y;
+            self.normal = Vec3::Y * -self.step;
+            return;
+        }
+        self.position.z += self.step.z;
+        self.bound.z += self.delta.z;
+        self.normal = Vec3::Z * -self.step;
     }
 }

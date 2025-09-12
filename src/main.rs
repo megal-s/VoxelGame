@@ -37,19 +37,26 @@ use bevy::{
     DefaultPlugins,
     app::{App, Update},
     asset::Assets,
+    color::{Alpha, Color},
     core_pipeline::core_3d::Camera3d,
     ecs::{
         component::Component,
-        query::With,
+        entity::Entity,
+        query::{With, Without},
         resource::Resource,
         schedule::IntoScheduleConfigs,
         system::{Commands, Res, ResMut, Single},
     },
     image::Image,
     input::{ButtonInput, keyboard::KeyCode},
-    math::IVec3,
-    pbr::AmbientLight,
-    render::camera::{Camera, PerspectiveProjection, Projection},
+    math::{IVec3, Vec3, primitives::Cuboid},
+    pbr::{AmbientLight, MeshMaterial3d, StandardMaterial},
+    prelude::PluginGroup,
+    render::{
+        camera::{Camera, PerspectiveProjection, Projection},
+        mesh::{Mesh, Mesh3d},
+        texture::ImagePlugin,
+    },
     state::{
         app::AppExtStates,
         commands::CommandsStatesExt,
@@ -58,7 +65,7 @@ use bevy::{
     },
     text::TextLayout,
     transform::components::Transform,
-    ui::{Node, PositionType, Val, widget::Text},
+    ui::{BackgroundColor, Node, PositionType, Val, widget::Text},
     window::{PrimaryWindow, Window},
 };
 use bevy_asset_loader::loading_state::{
@@ -128,12 +135,26 @@ impl Default for GameSettings {
 #[derive(Component)]
 struct DebugText;
 
+#[derive(Component)]
+struct DebugBlockOutline;
+
+#[derive(Component)]
+struct DebugBlockNormalOutline;
+
+#[derive(Default, Resource)]
+struct PersistentDebugInformation {
+    ray_mesh_entities: Vec<Entity>,
+    constant_ray_mesh_entities: Vec<Entity>,
+    show_constant_entities: bool,
+}
+
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins) // TODO; replace with only those needed
+        .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest())) // TODO; replace with only those needed
         .add_plugins(camera_control::CameraMovementPlugin)
         .add_plugins(level::LevelPlugin)
-        .insert_resource(GameSettings::default())
+        .init_resource::<GameSettings>()
+        .init_resource::<PersistentDebugInformation>()
         .init_resource::<BlockAtlasManager>()
         .init_state::<GameState>()
         .add_loading_state(
@@ -150,7 +171,12 @@ fn main() {
         .run();
 }
 
-fn setup_world(mut commands: Commands, window_query: Single<&mut Window, With<PrimaryWindow>>) {
+fn setup_world(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    window_query: Single<&mut Window, With<PrimaryWindow>>,
+) {
     // Setup window
     let mut window = window_query.into_inner();
     window.cursor_options.grab_mode = bevy::window::CursorGrabMode::Confined;
@@ -165,13 +191,41 @@ fn setup_world(mut commands: Commands, window_query: Single<&mut Window, With<Pr
         },
         Camera3d::default(),
         MovableCamera {
-            speed: 60.,
+            speed: 15.,
             sensitivity: 0.002,
         },
         Projection::from(PerspectiveProjection {
             fov: 90_f32.to_radians(),
             ..Default::default()
         }),
+    ));
+
+    // Crosshair
+    commands.spawn((
+        BackgroundColor(Color::WHITE),
+        Node {
+            position_type: PositionType::Absolute,
+            justify_self: bevy::ui::JustifySelf::Center,
+            align_self: bevy::ui::AlignSelf::Center,
+            width: Val::Px(10.),
+            height: Val::Px(10.),
+            ..Default::default()
+        },
+    ));
+
+    // Block outline
+    commands.spawn((
+        DebugBlockOutline,
+        Mesh3d(meshes.add(Cuboid::from_length(1.02))),
+        MeshMaterial3d(materials.add(StandardMaterial::from_color(Color::WHITE.with_alpha(0.5)))),
+        Transform::from_translation(Vec3::ZERO),
+    ));
+
+    commands.spawn((
+        DebugBlockNormalOutline,
+        Mesh3d(meshes.add(Cuboid::from_length(1.01))),
+        MeshMaterial3d(materials.add(StandardMaterial::from_color(Color::srgba(1., 1., 0., 0.25)))),
+        Transform::from_translation(Vec3::ZERO),
     ));
 
     // Debug info
@@ -187,7 +241,7 @@ fn setup_world(mut commands: Commands, window_query: Single<&mut Window, With<Pr
     ));
 
     commands.spawn((
-        Text::new("[Arrow Keys]: Change render distance\n[E]: Place block\n[Q]: Remove block"),
+        Text::new("[Arrow Keys]: Change render distance\n[E]: Place block\n[Q]: Remove block\n[R]: Toggle ray overlay"),
         TextLayout::new_with_justify(bevy::text::JustifyText::Right),
         Node {
             position_type: PositionType::Absolute,
@@ -243,11 +297,33 @@ fn update_debug_text(
     );
 }
 
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::type_complexity)]
 fn handle_debug_input(
+    mut commands: Commands,
     mut level: ResMut<Level>,
     mut settings: ResMut<GameSettings>,
+    mut debug_info: ResMut<PersistentDebugInformation>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     camera_query: Single<&Transform, With<Camera>>,
+    mut block_outline_query: Single<
+        &mut Transform,
+        (
+            With<DebugBlockOutline>,
+            Without<Camera>,
+            Without<DebugBlockNormalOutline>,
+        ),
+    >,
+    mut block_outline_normal_query: Single<
+        &mut Transform,
+        (
+            With<DebugBlockNormalOutline>,
+            Without<Camera>,
+            Without<DebugBlockOutline>,
+        ),
+    >,
 ) {
     if keyboard_input.just_pressed(KeyCode::ArrowUp) {
         settings.vertical_render_distance += 1;
@@ -268,21 +344,83 @@ fn handle_debug_input(
     if keyboard_input.just_pressed(KeyCode::KeyQ) {
         block_interaction = Some(false);
     }
-
-    let Some(block_interaction) = block_interaction else {
-        return;
-    };
+    if keyboard_input.just_pressed(KeyCode::KeyR) {
+        debug_info.show_constant_entities = !debug_info.show_constant_entities;
+    }
 
     let mut chunk_position = ChunkGrid::to_chunk_coordinates(camera_query.translation);
     let Some(mut chunk) = level.get_chunk_grid().0.get(&chunk_position) else {
         return;
     };
+
+    let ray_material = materials.add(StandardMaterial::from_color(Color::srgba(1., 0., 1., 0.75)));
+    let ray_normal_material =
+        materials.add(StandardMaterial::from_color(Color::srgba(0., 1., 0., 0.75)));
     let mut raycast = BlockRaycast::from_origin_in_direction(
         camera_query.translation,
         camera_query.forward().normalize(),
     );
+    if block_interaction.is_some() {
+        for entity in debug_info.ray_mesh_entities.drain(..) {
+            commands.entity(entity).despawn();
+        }
+        debug_info.ray_mesh_entities.push(
+            commands
+                .spawn((
+                    Mesh3d(meshes.add(Cuboid::from_length(0.15))),
+                    MeshMaterial3d(
+                        materials.add(StandardMaterial::from_color(Color::srgba(0., 1., 1., 0.75))),
+                    ),
+                    Transform::from_translation(camera_query.translation),
+                ))
+                .id(),
+        );
+    }
+    for entity in debug_info.constant_ray_mesh_entities.drain(..) {
+        commands.entity(entity).despawn();
+    }
     let rebuild = loop {
-        let position = raycast.query_position();
+        let mut position = raycast.position;
+        if block_interaction.is_some() {
+            debug_info.ray_mesh_entities.push(
+                commands
+                    .spawn((
+                        Mesh3d(meshes.add(Cuboid::from_length(0.1))),
+                        MeshMaterial3d(ray_material.clone()),
+                        Transform::from_translation(position),
+                    ))
+                    .id(),
+            );
+            debug_info.ray_mesh_entities.push(
+                commands
+                    .spawn((
+                        Mesh3d(meshes.add(Cuboid::from_length(0.05))),
+                        MeshMaterial3d(ray_normal_material.clone()),
+                        Transform::from_translation(position + raycast.normal * 0.1),
+                    ))
+                    .id(),
+            );
+        }
+        if debug_info.show_constant_entities {
+            debug_info.constant_ray_mesh_entities.push(
+                commands
+                    .spawn((
+                        Mesh3d(meshes.add(Cuboid::from_length(0.1))),
+                        MeshMaterial3d(ray_material.clone()),
+                        Transform::from_translation(position),
+                    ))
+                    .id(),
+            );
+            debug_info.constant_ray_mesh_entities.push(
+                commands
+                    .spawn((
+                        Mesh3d(meshes.add(Cuboid::from_length(0.05))),
+                        MeshMaterial3d(ray_normal_material.clone()),
+                        Transform::from_translation(position + raycast.normal * 0.1),
+                    ))
+                    .id(),
+            );
+        }
         {
             let current_chunk_position = ChunkGrid::to_chunk_coordinates(position);
             if current_chunk_position != chunk_position {
@@ -294,18 +432,37 @@ fn handle_debug_input(
             }
         }
 
-        let index = Chunk::to_index(Chunk::to_block_coordinates(position.floor().as_ivec3()));
+        let index = Chunk::to_index(Chunk::to_block_coordinates(position.round().as_ivec3()));
         if chunk.read().expect("Chunk rw poisoned").contents[index].is_none() {
             raycast.step();
             continue;
         }
-        if block_interaction {
-            chunk.write().expect("Chunk rw poisoned").contents[index] =
-                Some(Block::new(Identifier::new(DEFAULT_NAMESPACE, "dirt")));
-        } else {
-            chunk.write().expect("Chunk rw poisoned").contents[index] = None;
+
+        block_outline_query.translation = position.floor();
+        block_outline_normal_query.translation = position.floor() + raycast.normal;
+
+        if let Some(block_interaction) = block_interaction {
+            if block_interaction {
+                position += raycast.normal;
+                let target_chunk_position = ChunkGrid::to_chunk_coordinates(position);
+                if target_chunk_position != chunk_position {
+                    let Some(c) = level.get_chunk_grid().0.get(&target_chunk_position) else {
+                        break None;
+                    };
+                    chunk = c;
+                }
+
+                let index =
+                    Chunk::to_index(Chunk::to_block_coordinates(position.round().as_ivec3()));
+                chunk.write().expect("Chunk rw poisoned").contents[index] =
+                    Some(Block::new(Identifier::new(DEFAULT_NAMESPACE, "dirt")));
+            } else {
+                chunk.write().expect("Chunk rw poisoned").contents[index] = None;
+            }
+            break Some(position);
         }
-        break Some(position);
+
+        break None;
     };
 
     if let Some(position) = rebuild {
