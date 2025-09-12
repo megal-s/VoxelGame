@@ -375,6 +375,16 @@ fn handle_debug_input(
                 ))
                 .id(),
         );
+        for i in 0..50 {
+            debug_info.ray_mesh_entities.push(commands.spawn((
+                    Mesh3d(meshes.add(Cuboid::from_length(0.075))),
+                    MeshMaterial3d(
+                        materials.add(StandardMaterial::from_color(Color::srgba(0.25, 0., 1., 1.))),
+                    ),
+                    Transform::from_translation(camera_query.translation + camera_query.forward() * (i as f32 / 2.)),
+                ))
+                .id());
+        }
     }
     for entity in debug_info.constant_ray_mesh_entities.drain(..) {
         commands.entity(entity).despawn();
