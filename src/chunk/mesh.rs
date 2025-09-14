@@ -33,12 +33,10 @@ pub fn build_mesh(
         };
 
         let (x, y, z) = {
-            let block_position = Chunk::to_block_coordinates_from_index(index).unwrap();
-            (
-                block_position.x as f32,
-                block_position.y as f32,
-                block_position.z as f32,
-            )
+            let block_position = Chunk::to_block_coordinates_from_index(index)
+                .unwrap()
+                .as_vec3();
+            (block_position.x, block_position.y, block_position.z)
         };
 
         // May be worth storing chunk.upgrade() as a local variable instead of calling Weak::upgrade for each face
@@ -55,10 +53,10 @@ pub fn build_mesh(
                 .is_none_or(|block| block.is_none())
         {
             positions.extend_from_slice(&[
-                [x + -0.5, y + 0.5, z + -0.5],
-                [x + 0.5, y + 0.5, z + -0.5],
-                [x + 0.5, y + 0.5, z + 0.5],
-                [x + -0.5, y + 0.5, z + 0.5],
+                [x, y + 1., z],
+                [x + 1., y + 1., z],
+                [x + 1., y + 1., z + 1.],
+                [x, y + 1., z + 1.],
             ]);
             normals.extend_from_slice(&[
                 [0.0, 1.0, 0.0],
@@ -94,10 +92,10 @@ pub fn build_mesh(
                 .is_none_or(|block| block.is_none())
         {
             positions.extend_from_slice(&[
-                [x + -0.5, y + -0.5, z + -0.5],
-                [x + 0.5, y + -0.5, z + -0.5],
-                [x + 0.5, y + -0.5, z + 0.5],
-                [x + -0.5, y + -0.5, z + 0.5],
+                [x, y, z],
+                [x + 1., y, z],
+                [x + 1., y, z + 1.],
+                [x, y, z + 1.],
             ]);
             normals.extend_from_slice(&[
                 [0.0, -1.0, 0.0],
@@ -132,10 +130,10 @@ pub fn build_mesh(
                 .is_none_or(|block| block.is_none())
         {
             positions.extend_from_slice(&[
-                [x + 0.5, y + -0.5, z + -0.5],
-                [x + 0.5, y + -0.5, z + 0.5],
-                [x + 0.5, y + 0.5, z + 0.5],
-                [x + 0.5, y + 0.5, z + -0.5],
+                [x + 1., y, z],
+                [x + 1., y, z + 1.],
+                [x + 1., y + 1., z + 1.],
+                [x + 1., y + 1., z],
             ]);
             normals.extend_from_slice(&[
                 [1.0, 0.0, 0.0],
@@ -170,10 +168,10 @@ pub fn build_mesh(
                 .is_none_or(|block| block.is_none())
         {
             positions.extend_from_slice(&[
-                [x + -0.5, y + -0.5, z + -0.5],
-                [x + -0.5, y + -0.5, z + 0.5],
-                [x + -0.5, y + 0.5, z + 0.5],
-                [x + -0.5, y + 0.5, z + -0.5],
+                [x, y, z],
+                [x, y, z + 1.],
+                [x, y + 1., z + 1.],
+                [x, y + 1., z],
             ]);
             normals.extend_from_slice(&[
                 [-1.0, 0.0, 0.0],
@@ -208,10 +206,10 @@ pub fn build_mesh(
                 .is_none_or(|block| block.is_none())
         {
             positions.extend_from_slice(&[
-                [x + -0.5, y + -0.5, z + 0.5],
-                [x + -0.5, y + 0.5, z + 0.5],
-                [x + 0.5, y + 0.5, z + 0.5],
-                [x + 0.5, y + -0.5, z + 0.5],
+                [x, y, z + 1.],
+                [x, y + 1., z + 1.],
+                [x + 1., y + 1., z + 1.],
+                [x + 1., y, z + 1.],
             ]);
             normals.extend_from_slice(&[
                 [0.0, 0.0, 1.0],
@@ -246,10 +244,10 @@ pub fn build_mesh(
                 .is_none_or(|block| block.is_none())
         {
             positions.extend_from_slice(&[
-                [x + -0.5, y + -0.5, z + -0.5],
-                [x + -0.5, y + 0.5, z + -0.5],
-                [x + 0.5, y + 0.5, z + -0.5],
-                [x + 0.5, y + -0.5, z + -0.5],
+                [x, y, z],
+                [x, y + 1., z],
+                [x + 1., y + 1., z],
+                [x + 1., y, z],
             ]);
             normals.extend_from_slice(&[
                 [0.0, 0.0, -1.0],
