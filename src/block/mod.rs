@@ -30,7 +30,7 @@ impl Block {
     }
 }
 
-pub struct BlockRaycast {
+pub struct BlockRay {
     pub position: Vec3,
     step: Vec3,
     delta: Vec3,
@@ -38,7 +38,7 @@ pub struct BlockRaycast {
     pub normal: Vec3,
 }
 
-impl BlockRaycast {
+impl BlockRay {
     pub fn from_origin_to_target(origin: Vec3, target: Vec3) -> Self {
         Self::from_origin_in_direction(origin, (target - origin).normalize_or_zero())
     }
@@ -64,32 +64,6 @@ impl BlockRaycast {
             Self::max(origin.y, floored_origin.y, step.y, direction.y),
             Self::max(origin.z, floored_origin.z, step.z, direction.z),
         );
-
-        Self {
-            position: floored_origin,
-            step,
-            delta,
-            bound,
-            normal: Vec3::ZERO,
-        }
-    }
-
-    pub fn _from_origin_in_direction(origin: Vec3, mut direction: Vec3) -> Self {
-        let floored_origin = origin.floor();
-        if direction.x == 0. {
-            direction.x = 0.00001;
-        }
-        if direction.y == 0. {
-            direction.y = 0.00001;
-        }
-        if direction.z == 0. {
-            direction.z = 0.00001;
-        }
-        direction = direction.normalize() * 100.;
-        let inverse_direction = 1. / direction;
-        let step = direction.signum();
-        let delta = (inverse_direction * step).min(Vec3::splat(1.));
-        let bound = (((floored_origin + step.max(Vec3::ZERO)) - origin) * inverse_direction).abs();
 
         Self {
             position: floored_origin,

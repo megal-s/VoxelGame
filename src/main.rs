@@ -42,13 +42,14 @@ use bevy::{
     ecs::{
         component::Component,
         entity::Entity,
+        event::EventReader,
         query::{With, Without},
         resource::Resource,
         schedule::IntoScheduleConfigs,
         system::{Commands, Res, ResMut, Single},
     },
     image::Image,
-    input::{ButtonInput, keyboard::KeyCode},
+    input::{ButtonInput, keyboard::KeyCode, mouse::MouseWheel},
     math::{IVec3, Vec3, primitives::Cuboid},
     pbr::{AmbientLight, MeshMaterial3d, StandardMaterial},
     prelude::PluginGroup,
@@ -74,7 +75,7 @@ use bevy_asset_loader::loading_state::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    block::{Block, BlockAssets, BlockAtlasManager, BlockRaycast},
+    block::{Block, BlockAssets, BlockAtlasManager, BlockRay},
     camera_control::MovableCamera,
     chunk::{Chunk, ChunkGrid},
     level::Level,
@@ -241,7 +242,7 @@ fn setup_world(
     ));
 
     commands.spawn((
-        Text::new("[Arrow Keys]: Change render distance\n[E]: Place block\n[Q]: Remove block\n[R]: Toggle ray overlay"),
+        Text::new("[Mouse Wheel]: Change camera movement speed\n[Arrow Keys]: Change render distance\n[E]: Place block\n[Q]: Remove block\n[R]: Toggle ray overlay"),
         TextLayout::new_with_justify(bevy::text::JustifyText::Right),
         Node {
             position_type: PositionType::Absolute,
@@ -277,21 +278,17 @@ fn setup_atlases(
 
 fn update_debug_text(
     settings: Res<GameSettings>,
-    camera_query: Single<&Transform, With<Camera>>,
+    camera_query: Single<(&MovableCamera, &Transform)>,
     text_query: Single<&mut Text, With<DebugText>>,
 ) {
-    let camera_position = camera_query.translation;
-    let int_camera_position = IVec3::new(
-        camera_position.x as i32,
-        camera_position.y as i32,
-        camera_position.z as i32,
-    );
+    let camera_position = camera_query.1.translation;
     text_query.into_inner().0 = format!(
-        "Raw   x/y/z: {}\nBlock x/y/z: {} ({})\nChunk x/y/z: {}\n\nRender Distance: [h:{}, v:{}]",
+        "Raw   x/y/z: {}\nBlock x/y/z: {} ({})\nChunk x/y/z: {}\n\nCamera Speed: {}\nRender Distance: [h:{}, v:{}]",
         camera_position,
-        int_camera_position,
-        Chunk::to_block_coordinates(int_camera_position),
+        camera_position.floor().as_ivec3(),
+        Chunk::to_block_coordinates(camera_position.floor().as_ivec3()),
         ChunkGrid::to_chunk_coordinates(camera_position),
+        camera_query.0.speed,
         settings.horizontal_render_distance,
         settings.vertical_render_distance
     );
@@ -306,13 +303,14 @@ fn handle_debug_input(
     mut debug_info: ResMut<PersistentDebugInformation>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut mouse_wheel_input: EventReader<MouseWheel>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    camera_query: Single<&Transform, With<Camera>>,
+    mut camera_query: Single<(&mut MovableCamera, &Transform)>,
     mut block_outline_query: Single<
         &mut Transform,
         (
             With<DebugBlockOutline>,
-            Without<Camera>,
+            Without<MovableCamera>,
             Without<DebugBlockNormalOutline>,
         ),
     >,
@@ -320,11 +318,12 @@ fn handle_debug_input(
         &mut Transform,
         (
             With<DebugBlockNormalOutline>,
-            Without<Camera>,
+            Without<MovableCamera>,
             Without<DebugBlockOutline>,
         ),
     >,
 ) {
+    // Change chunk render distance
     if keyboard_input.just_pressed(KeyCode::ArrowUp) {
         settings.vertical_render_distance += 1;
     }
@@ -337,6 +336,11 @@ fn handle_debug_input(
     if keyboard_input.just_pressed(KeyCode::ArrowLeft) {
         settings.horizontal_render_distance -= 1;
     }
+    // Toggle visibility of block interaction ray steps for current camera position+rotation
+    if keyboard_input.just_pressed(KeyCode::KeyR) {
+        debug_info.show_constant_entities = !debug_info.show_constant_entities;
+    }
+    // Place/Destroy block
     let mut block_interaction = None;
     if keyboard_input.just_pressed(KeyCode::KeyE) {
         block_interaction = Some(true);
@@ -344,26 +348,20 @@ fn handle_debug_input(
     if keyboard_input.just_pressed(KeyCode::KeyQ) {
         block_interaction = Some(false);
     }
-    if keyboard_input.just_pressed(KeyCode::KeyR) {
-        debug_info.show_constant_entities = !debug_info.show_constant_entities;
+    // Change camera move speed
+    for event in mouse_wheel_input.read() {
+        camera_query.0.speed += event.y;
+        camera_query.0.speed = camera_query.0.speed.clamp(0., 100.);
     }
-
-    let mut chunk_position = ChunkGrid::to_chunk_coordinates(camera_query.translation);
-    let Some(mut chunk) = level.get_chunk_grid().0.get(&chunk_position) else {
-        return;
-    };
-
-    let ray_material = materials.add(StandardMaterial::from_color(Color::srgba(1., 0., 1., 0.75)));
-    let ray_normal_material =
-        materials.add(StandardMaterial::from_color(Color::srgba(0., 1., 0., 0.75)));
-    let mut raycast = BlockRaycast::from_origin_in_direction(
-        camera_query.translation,
-        camera_query.forward().normalize(),
-    );
+    // Cleanup entities created when rendering block interaction ray steps
+    for entity in debug_info.constant_ray_mesh_entities.drain(..) {
+        commands.entity(entity).despawn();
+    }
     if block_interaction.is_some() {
         for entity in debug_info.ray_mesh_entities.drain(..) {
             commands.entity(entity).despawn();
         }
+        // Draw cube indicating camera position when the current ray was cast
         debug_info.ray_mesh_entities.push(
             commands
                 .spawn((
@@ -371,111 +369,128 @@ fn handle_debug_input(
                     MeshMaterial3d(
                         materials.add(StandardMaterial::from_color(Color::srgba(0., 1., 1., 0.75))),
                     ),
-                    Transform::from_translation(camera_query.translation),
+                    Transform::from_translation(camera_query.1.translation),
                 ))
                 .id(),
         );
-        for i in 0..50 {
-            debug_info.ray_mesh_entities.push(commands.spawn((
-                    Mesh3d(meshes.add(Cuboid::from_length(0.075))),
-                    MeshMaterial3d(
-                        materials.add(StandardMaterial::from_color(Color::srgba(0.25, 0., 1., 1.))),
-                    ),
-                    Transform::from_translation(camera_query.translation + camera_query.forward() * (i as f32 / 2.)),
-                ))
-                .id());
+        // Draw line of cubes from camera position/rotation indicating where the ray is expected to end
+        for i in 0..200 {
+            debug_info.ray_mesh_entities.push(
+                commands
+                    .spawn((
+                        Mesh3d(meshes.add(Cuboid::from_length(0.075))),
+                        MeshMaterial3d(
+                            materials
+                                .add(StandardMaterial::from_color(Color::srgba(0.25, 0., 1., 1.))),
+                        ),
+                        Transform::from_translation(
+                            camera_query.1.translation + camera_query.1.forward() * (i as f32 / 2.),
+                        ),
+                    ))
+                    .id(),
+            )
         }
     }
-    for entity in debug_info.constant_ray_mesh_entities.drain(..) {
-        commands.entity(entity).despawn();
-    }
+    // Create block interaction ray
+    let mut ray = BlockRay::from_origin_in_direction(
+        camera_query.1.translation,
+        camera_query.1.forward().normalize(),
+    );
+    // Initialize first chunk to check for solid blocks
+    let mut chunk_position = ChunkGrid::to_chunk_coordinates(ray.position);
+    let Some(mut chunk) = level.get_chunk_grid().0.get(&chunk_position) else {
+        // Inhabited chunk not loaded so we shouldn't modifiy it
+        return;
+    };
+    // Step over block interaction ray and return a chunk position if a block was hit
     let rebuild = loop {
-        let mut position = raycast.position;
-        if block_interaction.is_some() {
-            debug_info.ray_mesh_entities.push(
-                commands
-                    .spawn((
-                        Mesh3d(meshes.add(Cuboid::from_length(0.1))),
-                        MeshMaterial3d(ray_material.clone()),
-                        Transform::from_translation(position),
-                    ))
-                    .id(),
-            );
-            debug_info.ray_mesh_entities.push(
-                commands
-                    .spawn((
-                        Mesh3d(meshes.add(Cuboid::from_length(0.05))),
-                        MeshMaterial3d(ray_normal_material.clone()),
-                        Transform::from_translation(position + raycast.normal * 0.1),
-                    ))
-                    .id(),
-            );
-        }
+        // Draw cubes at current ray position and normal
+        let position_entity = (
+            Mesh3d(meshes.add(Cuboid::from_length(0.1))),
+            MeshMaterial3d(
+                materials.add(StandardMaterial::from_color(Color::srgba(1., 0., 1., 0.75))),
+            ),
+            Transform::from_translation(ray.position),
+        );
+        let normal_entity = (
+            Mesh3d(meshes.add(Cuboid::from_length(0.05))),
+            MeshMaterial3d(
+                materials.add(StandardMaterial::from_color(Color::srgba(0., 1., 0., 0.75))),
+            ),
+            Transform::from_translation(ray.position + ray.normal * 0.1),
+        );
         if debug_info.show_constant_entities {
-            debug_info.constant_ray_mesh_entities.push(
-                commands
-                    .spawn((
-                        Mesh3d(meshes.add(Cuboid::from_length(0.1))),
-                        MeshMaterial3d(ray_material.clone()),
-                        Transform::from_translation(position),
-                    ))
-                    .id(),
-            );
-            debug_info.constant_ray_mesh_entities.push(
-                commands
-                    .spawn((
-                        Mesh3d(meshes.add(Cuboid::from_length(0.05))),
-                        MeshMaterial3d(ray_normal_material.clone()),
-                        Transform::from_translation(position + raycast.normal * 0.1),
-                    ))
-                    .id(),
-            );
+            debug_info
+                .constant_ray_mesh_entities
+                .push(commands.spawn(position_entity.clone()).id());
+            debug_info
+                .constant_ray_mesh_entities
+                .push(commands.spawn(normal_entity.clone()).id());
         }
-        {
-            let current_chunk_position = ChunkGrid::to_chunk_coordinates(position);
-            if current_chunk_position != chunk_position {
-                let Some(c) = level.get_chunk_grid().0.get(&current_chunk_position) else {
-                    break None;
-                };
-                chunk_position = current_chunk_position;
-                chunk = c;
-            }
+        if block_interaction.is_some() {
+            debug_info
+                .ray_mesh_entities
+                .push(commands.spawn(position_entity).id());
+            debug_info
+                .ray_mesh_entities
+                .push(commands.spawn(normal_entity).id());
         }
 
-        let index = Chunk::to_index(Chunk::to_block_coordinates(position.round().as_ivec3()));
-        if chunk.read().expect("Chunk rw poisoned").contents[index].is_none() {
-            raycast.step();
+        // Check if the position of the current ray step is still within the chunk being checked
+        // Seperate variable used to store the variable here to avoid locking chunk rwlock
+        let ray_chunk_position = ChunkGrid::to_chunk_coordinates(ray.position);
+        if ray_chunk_position != chunk_position {
+            chunk_position = ray_chunk_position;
+            let Some(ray_chunk) = level.get_chunk_grid().0.get(&chunk_position) else {
+                // Chunk at current ray step not loaded so we cant continue checking the ray any further
+                break None;
+            };
+            chunk = ray_chunk;
+        }
+
+        // Get index of the block at the current ray step
+        let target_block_index =
+            Chunk::to_index(Chunk::to_block_coordinates(ray.position.floor().as_ivec3()));
+        // Check if block at previously defined index is solid
+        if chunk.read().expect("Chunk rw poisoned").contents[target_block_index].is_none() {
+            ray.step();
             continue;
         }
 
-        block_outline_query.translation = position.floor();
-        block_outline_normal_query.translation = position.floor() + raycast.normal;
+        // Set overlay positions so we can see where ray ended up
+        block_outline_query.translation = ray.position.floor() + 0.5;
+        block_outline_normal_query.translation = ray.position.floor() + ray.normal.floor() + 0.5;
 
-        if let Some(block_interaction) = block_interaction {
-            if block_interaction {
-                position += raycast.normal;
-                let target_chunk_position = ChunkGrid::to_chunk_coordinates(position);
-                if target_chunk_position != chunk_position {
-                    let Some(c) = level.get_chunk_grid().0.get(&target_chunk_position) else {
-                        break None;
-                    };
-                    chunk = c;
-                }
+        // Get the block interaction we wish to do this frame or else end the ray here if there is none
+        let Some(block_interaction) = block_interaction else {
+            break None;
+        };
 
-                let index =
-                    Chunk::to_index(Chunk::to_block_coordinates(position.round().as_ivec3()));
-                chunk.write().expect("Chunk rw poisoned").contents[index] =
-                    Some(Block::new(Identifier::new(DEFAULT_NAMESPACE, "dirt")));
-            } else {
-                chunk.write().expect("Chunk rw poisoned").contents[index] = None;
+        // Place a block at the ray position offset by the ray normal
+        if block_interaction {
+            // If the position ends up in a different chunk when offset by the normal load that chunk
+            let ray_chunk_position = ChunkGrid::to_chunk_coordinates(ray.position + ray.normal);
+            if ray_chunk_position != chunk_position {
+                chunk_position = ray_chunk_position;
+                let Some(ray_chunk) = level.get_chunk_grid().0.get(&chunk_position) else {
+                    // Chunk not loaded so exit early
+                    break None;
+                };
+                chunk = ray_chunk;
             }
-            break Some(position);
+            chunk.write().expect("Chunk rw poisoned").contents[Chunk::to_index(
+                Chunk::to_block_coordinates((ray.position + ray.normal).floor().as_ivec3()),
+            )] = Some(Block::new(Identifier::new(DEFAULT_NAMESPACE, "dirt")));
         }
-
-        break None;
+        // Remove the block at the ray position
+        else {
+            chunk.write().expect("Chunk rw poisoned").contents[target_block_index] = None;
+        }
+        break Some(chunk_position);
     };
 
-    if let Some(position) = rebuild {
-        level.rebuild_mesh(ChunkGrid::to_chunk_coordinates(position));
+    // Rebuild modified chunk mesh (if a chunk was modified)
+    if let Some(chunk_position) = rebuild {
+        level.rebuild_mesh(chunk_position);
     }
 }
