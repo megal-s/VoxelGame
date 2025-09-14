@@ -53,10 +53,10 @@ pub fn build_mesh(
                 .is_none_or(|block| block.is_none())
         {
             positions.extend_from_slice(&[
-                [x + -0.5, y + 0.5, z + -0.5],
-                [x + 0.5, y + 0.5, z + -0.5],
-                [x + 0.5, y + 0.5, z + 0.5],
-                [x + -0.5, y + 0.5, z + 0.5],
+                [x, y + 1., z],
+                [x + 1., y + 1., z],
+                [x + 1., y + 1., z + 1.],
+                [x, y + 1., z + 1.],
             ]);
             normals.extend_from_slice(&[
                 [0.0, 1.0, 0.0],
@@ -92,10 +92,10 @@ pub fn build_mesh(
                 .is_none_or(|block| block.is_none())
         {
             positions.extend_from_slice(&[
-                [x + -0.5, y + -0.5, z + -0.5],
-                [x + 0.5, y + -0.5, z + -0.5],
-                [x + 0.5, y + -0.5, z + 0.5],
-                [x + -0.5, y + -0.5, z + 0.5],
+                [x, y, z],
+                [x + 1., y, z],
+                [x + 1., y, z + 1.],
+                [x, y, z + 1.],
             ]);
             normals.extend_from_slice(&[
                 [0.0, -1.0, 0.0],
@@ -130,10 +130,10 @@ pub fn build_mesh(
                 .is_none_or(|block| block.is_none())
         {
             positions.extend_from_slice(&[
-                [x + 0.5, y + -0.5, z + -0.5],
-                [x + 0.5, y + -0.5, z + 0.5],
-                [x + 0.5, y + 0.5, z + 0.5],
-                [x + 0.5, y + 0.5, z + -0.5],
+                [x + 1., y, z],
+                [x + 1., y, z + 1.],
+                [x + 1., y + 1., z + 1.],
+                [x + 1., y + 1., z],
             ]);
             normals.extend_from_slice(&[
                 [1.0, 0.0, 0.0],
@@ -168,10 +168,10 @@ pub fn build_mesh(
                 .is_none_or(|block| block.is_none())
         {
             positions.extend_from_slice(&[
-                [x + -0.5, y + -0.5, z + -0.5],
-                [x + -0.5, y + -0.5, z + 0.5],
-                [x + -0.5, y + 0.5, z + 0.5],
-                [x + -0.5, y + 0.5, z + -0.5],
+                [x, y, z],
+                [x, y, z + 1.],
+                [x, y + 1., z + 1.],
+                [x, y + 1., z],
             ]);
             normals.extend_from_slice(&[
                 [-1.0, 0.0, 0.0],
@@ -206,10 +206,10 @@ pub fn build_mesh(
                 .is_none_or(|block| block.is_none())
         {
             positions.extend_from_slice(&[
-                [x + -0.5, y + -0.5, z + 0.5],
-                [x + -0.5, y + 0.5, z + 0.5],
-                [x + 0.5, y + 0.5, z + 0.5],
-                [x + 0.5, y + -0.5, z + 0.5],
+                [x, y, z + 1.],
+                [x, y + 1., z + 1.],
+                [x + 1., y + 1., z + 1.],
+                [x + 1., y, z + 1.],
             ]);
             normals.extend_from_slice(&[
                 [0.0, 0.0, 1.0],
@@ -244,10 +244,10 @@ pub fn build_mesh(
                 .is_none_or(|block| block.is_none())
         {
             positions.extend_from_slice(&[
-                [x + -0.5, y + -0.5, z + -0.5],
-                [x + -0.5, y + 0.5, z + -0.5],
-                [x + 0.5, y + 0.5, z + -0.5],
-                [x + 0.5, y + -0.5, z + -0.5],
+                [x, y, z],
+                [x, y + 1., z],
+                [x + 1., y + 1., z],
+                [x + 1., y, z],
             ]);
             normals.extend_from_slice(&[
                 [0.0, 0.0, -1.0],
